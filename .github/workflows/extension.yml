@@ -1,0 +1,111 @@
+name: Extension package and store submission
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - manifest.json
+      - content.js
+      - popup.html
+      - popup.css
+      - popup.js
+      - icons/**
+      - build-store-package.ps1
+      - scripts/prepare-release.mjs
+      - scripts/deploy-cws.mjs
+      - .github/workflows/extension.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not interrupt an upload or submission in progress for the same store item.
+concurrency:
+  group: chrome-web-store-${{ vars.CWS_EXTENSION_ID || 'unconfigured' }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Validate JavaScript syntax
+        run: |
+          node --check content.js
+          node --check popup.js
+          node --check scripts/deploy-cws.mjs
+          node --check scripts/prepare-release.mjs
+      - name: Prepare the version for this run
+        id: version
+        run: node scripts/prepare-release.mjs
+      - name: Build the store ZIP
+        shell: pwsh
+        run: ./build-store-package.ps1
+      - name: Keep the installable ZIP
+        uses: actions/upload-artifact@v7
+        with:
+          name: extension-${{ github.run_number }}
+          path: dist/youtube-auto-skip-${{ steps.version.outputs.version }}.zip
+          if-no-files-found: error
+          compression-level: 0
+          overwrite: true
+          retention-days: 30
+      - name: Explain store configuration
+        if: ${{ vars.CWS_PUBLISHER_ID == '' || vars.CWS_EXTENSION_ID == '' }}
+        run: |
+          echo 'The ZIP is ready. Store submission was skipped because CWS_PUBLISHER_ID or CWS_EXTENSION_ID is missing. See store/automation-cws.txt.' >> "$GITHUB_STEP_SUMMARY"
+
+  submit:
+    needs: package
+    if: ${{ github.ref == 'refs/heads/main' && vars.CWS_PUBLISHER_ID != '' && vars.CWS_EXTENSION_ID != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      - name: Prepare the same package version
+        run: node scripts/prepare-release.mjs
+      - name: Restore the built ZIP
+        uses: actions/download-artifact@v7
+        with:
+          name: extension-${{ github.run_number }}
+          path: dist
+      - name: Restore an earlier upload receipt on rerun
+        if: ${{ github.run_attempt > 1 }}
+        continue-on-error: true
+        uses: actions/download-artifact@v7
+        with:
+          name: cws-upload-${{ github.run_number }}
+          path: cws-deploy
+      - name: Upload and submit for review
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PUBLISHER_ID: ${{ vars.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ vars.CWS_EXTENSION_ID }}
+          CWS_UPLOAD_RECEIPT: cws-deploy/upload-receipt.json
+        run: node scripts/deploy-cws.mjs
+      - name: Keep the upload receipt for a safe submission retry
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cws-upload-${{ github.run_number }}
+          path: cws-deploy/upload-receipt.json
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 30

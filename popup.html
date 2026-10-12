@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>유튜브 자동 건너뛰기</title>
+    <link rel="stylesheet" href="popup.css">
+    <script src="popup.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <div class="heading">
+        <img class="brand" src="icons/icon128.png" width="44" height="44" alt="">
+        <div>
+          <p class="eyebrow">YouTube</p>
+          <h1>자동 건너뛰기</h1>
+        </div>
+      </div>
+
+      <p id="description" class="description">건너뛰기 버튼이 나타나면<br>자동으로 눌러드려요.</p>
+
+      <label class="setting" for="enabled">
+        <span class="setting-text">
+          <span class="setting-title">광고 자동 건너뛰기</span>
+          <span id="state" class="state" role="status">설정 불러오는 중…</span>
+        </span>
+        <input id="enabled" type="checkbox" role="switch" disabled aria-describedby="description limitation">
+      </label>
+
+      <p id="limitation" class="note">
+        <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+          <circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.4"></circle>
+          <path d="M10 9v4M10 6.6v.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+        </svg>
+        <span>버튼이 없는 광고는 그대로 재생돼요.</span>
+      </p>
+      <p id="error" class="error" role="alert" hidden></p>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 440 280" width="440" height="280">
+  <title>자동 건너뛰기 홍보 이미지</title>
+  <rect width="440" height="280" fill="#F8F9FD"/>
+  <rect x=".5" y=".5" width="439" height="279" fill="none" stroke="#E5E9F3"/>
+  <rect x="36" y="84" width="112" height="112" rx="32" fill="#EEF1FE"/>
+  <rect x="44" y="92" width="96" height="96" rx="24" fill="#4263EB"/>
+  <g fill="#fff">
+    <path d="M70 119 101 140 70 161Z"/>
+    <rect x="107" y="119" width="8" height="42" rx="2"/>
+  </g>
+  <g font-family="Malgun Gothic, system-ui, sans-serif">
+    <text x="170" y="134" fill="#18243D" font-size="25" font-weight="700" letter-spacing="-1">자동 건너뛰기</text>
+    <text x="171" y="161" fill="#72809B" font-size="13" letter-spacing="-.3">버튼이 나타나면 자동 클릭</text>
+  </g>
+</svg>

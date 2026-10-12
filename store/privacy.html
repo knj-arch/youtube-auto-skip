@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="유튜브 자동 건너뛰기 확장 프로그램의 개인정보 처리방침입니다.">
+  <title>개인정보 처리방침 · 유튜브 자동 건너뛰기</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #1e293b; background: #f6f8fb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 48px 20px; line-height: 1.8; word-break: keep-all; overflow-wrap: anywhere; }
+    main { max-width: 820px; margin: 0 auto; padding: 40px; border: 1px solid #dce3ee; border-radius: 20px; background: #fff; }
+    header { padding-bottom: 24px; border-bottom: 1px solid #e2e8f0; }
+    h1 { margin: 6px 0 12px; font-size: clamp(1.8rem, 5vw, 2.4rem); line-height: 1.35; letter-spacing: -.04em; }
+    h2 { margin: 30px 0 8px; font-size: 1.15rem; line-height: 1.5; }
+    p { margin: 10px 0; }
+    .app { margin: 0; color: #334155; font-weight: 700; }
+    .meta { margin: 0; color: #64748b; font-size: .92rem; }
+    .intro { padding: 18px 20px; margin: 24px 0; border-radius: 12px; background: #edf5ff; }
+    ul { padding-left: 22px; }
+    li { margin: 8px 0; }
+    code { font-family: ui-monospace, monospace; font-size: .94em; }
+    footer { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e2e8f0; color: #64748b; font-size: .9rem; }
+    @media (max-width: 600px) { body { padding: 18px 12px; } main { padding: 26px 22px; border-radius: 14px; } }
+    @media print { body { background: #fff; padding: 0; } main { border: 0; max-width: none; padding: 0; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="app">유튜브 자동 건너뛰기</p>
+      <h1>개인정보 처리방침</h1>
+      <p class="meta">적용 버전 1.0.0 계열 · 최종 업데이트 2026년 10월 13일 (Asia/Seoul)</p>
+    </header>
+
+    <p class="intro">이 확장 프로그램은 유튜브 광고의 건너뛰기 버튼이 화면에 나타나고 클릭할 수 있을 때 자동으로 누릅니다. 기능에 필요한 페이지 요소와 설정을 사용자의 기기 안에서 처리합니다.</p>
+
+    <section aria-labelledby="processed-data">
+      <h2 id="processed-data">처리하는 정보와 사용 목적</h2>
+      <ul>
+        <li><strong>YouTube 플레이어 및 버튼 상태:</strong> <code>https://www.youtube.com/*</code>에서 플레이어와 건너뛰기 버튼의 DOM 요소, 광고 재생 여부, 버튼의 표시·활성 상태를 확인합니다. 광고가 재생 중이고 사용 가능한 건너뛰기 버튼을 자동으로 누르는 데만 사용합니다.</li>
+        <li><strong>기능 켜기/끄기 설정:</strong> 선택한 상태를 <code>chrome.storage.local</code>에 불리언 값 한 개로 저장합니다. 현재 기기의 Chrome 프로필에서 사용하며 확장 프로그램이 이 값을 서버에 전송하거나 기기 간 동기화하지 않습니다.</li>
+      </ul>
+      <p>페이지 요소와 클릭 간격 정보는 실행 중 메모리에서만 처리합니다. 방문 기록 또는 시청 기록으로 저장하지 않습니다. 영상 내용, 자막, 계정 정보, 쿠키, 로그인 정보, 결제 정보를 수집하거나 저장하는 기능은 없습니다.</p>
+    </section>
+
+    <section aria-labelledby="sharing">
+      <h2 id="sharing">전송, 공유 및 추적</h2>
+      <p>확장 프로그램에는 별도의 서버, 분석 도구, 광고 추적 도구 또는 사용자 데이터를 외부로 전송하는 코드가 없습니다. 처리하는 정보를 개발자나 제삼자에게 보내거나 판매하지 않습니다. 개인 맞춤 광고, 사용자 행동 분석, 신용도 판단 또는 대출 관련 용도로 사용하지 않습니다.</p>
+      <p>건너뛰기 버튼을 누르면 YouTube 사이트 자체의 처리와 통신이 발생할 수 있습니다. YouTube, Chrome, Chrome 웹 스토어 및 이 문서를 제공하는 호스팅 서비스의 데이터 처리는 각 서비스의 정책에 따릅니다. 이 문서는 확장 프로그램 자체의 데이터 취급을 설명합니다.</p>
+    </section>
+
+    <section aria-labelledby="retention">
+      <h2 id="retention">보관 및 삭제</h2>
+      <p>켜기/끄기 설정은 사용자가 변경하거나 확장 프로그램의 로컬 데이터를 삭제할 때까지 해당 Chrome 프로필의 기기에 보관됩니다. 확장 프로그램을 제거하면 Chrome이 확장 프로그램의 로컬 저장 데이터를 삭제합니다. 실행 중인 페이지 요소와 클릭 간격 정보는 페이지를 다시 불러오거나 해당 탭을 닫으면 더 이상 유지되지 않습니다.</p>
+      <p>팝업의 스위치를 끄면 자동 건너뛰기 기능을 중지할 수 있습니다. 확장 프로그램을 제거하면 이후의 페이지 요소 처리도 중지됩니다.</p>
+    </section>
+
+    <section aria-labelledby="permissions">
+      <h2 id="permissions">권한</h2>
+      <p><code>storage</code> 권한은 켜기/끄기 설정 저장에 사용합니다. <code>https://www.youtube.com/*</code> 접근은 페이지에 포함된 플레이어와 건너뛰기 버튼을 확인하고 누르는 데 사용합니다. 다른 사이트에 콘텐츠 스크립트를 실행하지 않습니다. 실행 코드는 확장 프로그램 패키지 안에 포함됩니다.</p>
+    </section>
+
+    <section aria-labelledby="limited-use">
+      <h2 id="limited-use">데이터 사용 범위</h2>
+      <p>유튜브 자동 건너뛰기의 사용자 데이터 사용은 Chrome 웹 스토어 사용자 데이터 정책과 제한된 사용 요건을 따릅니다. 필요한 페이지 요소와 설정은 공개된 자동 건너뛰기 기능을 제공하는 데만 사용하며, 개발자가 사용자의 페이지 내용이나 시청 활동을 열람할 수 있도록 전송하는 기능은 없습니다.</p>
+    </section>
+
+    <section aria-labelledby="contact">
+      <h2 id="contact">문의 및 변경 안내</h2>
+      <p><a href="https://github.com/knj-arch/youtube-auto-skip/issues">GitHub 저장소의 문의 게시판</a>에서 문의할 수 있습니다. 스토어 게시 후에는 Chrome 웹 스토어의 확장 프로그램 상세 페이지에 제공된 지원 기능도 사용할 수 있습니다. 기능이나 데이터 처리 방식이 바뀌면 이 문서와 스토어의 개인정보 공개 내용을 함께 업데이트합니다.</p>
+    </section>
+
+    <footer>이 확장 프로그램은 독립적으로 만든 도구이며 YouTube 또는 Google이 제공하거나 보증하는 제품이 아닙니다.</footer>
+  </main>
+</body>
+</html>

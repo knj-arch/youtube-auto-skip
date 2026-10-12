@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "유튜브 자동 건너뛰기",
+  "version": "1.0.0",
+  "description": "유튜브 광고의 건너뛰기 버튼이 나타나면 자동으로 클릭합니다.",
+  "permissions": ["storage"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "유튜브 자동 건너뛰기",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.youtube.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

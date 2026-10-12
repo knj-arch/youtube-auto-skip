@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>자동 건너뛰기 아이콘</title>
+  <rect x="16" y="16" width="96" height="96" rx="24" fill="#4263EB"/>
+  <g fill="#fff">
+    <path d="M42 43 73 64 42 85Z"/>
+    <rect x="79" y="43" width="8" height="42" rx="2"/>
+  </g>
+</svg>

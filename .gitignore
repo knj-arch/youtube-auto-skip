@@ -1,0 +1,11 @@
+/dist/
+/.pages-site/
+/node_modules/
+/.env
+/.env.*
+!.env.example
+*.pem
+*.key
+/store/assets/asset-checks.json
+/store/assets/generate-assets.cjs
+/store/assets/popup-actual.png

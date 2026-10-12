@@ -1,0 +1,46 @@
+name: Publish privacy policy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - store/privacy.html
+      - .github/workflows/privacy-pages.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: privacy-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/configure-pages@v5
+      - name: Prepare public privacy document
+        run: |
+          test -s store/privacy.html
+          mkdir -p .pages-site
+          cp store/privacy.html .pages-site/index.html
+          cp store/privacy.html .pages-site/privacy.html
+          touch .pages-site/.nojekyll
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: .pages-site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy privacy policy
+        id: deployment
+        uses: actions/deploy-pages@v4
