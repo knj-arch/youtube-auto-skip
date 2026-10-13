@@ -17,6 +17,15 @@
   let intervalId;
   let scanTimeout;
   let storageRevision = 0;
+  let requestInFlight = false;
+
+  chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (sender.id !== chrome.runtime.id || message?.type !== "confirm-skip-document") return;
+    respond({
+      ok: enabled && location.href === message.url && document.visibilityState === "visible",
+      url: location.href
+    });
+  });
 
   function canClick(button, player) {
     if (!button.isConnected || button.closest(PLAYER_SELECTOR) !== player) {
@@ -44,12 +53,18 @@
       }
     }
     const bounds = button.getBoundingClientRect();
-    return bounds.width > 0 && bounds.height > 0;
+    const x = bounds.x + bounds.width / 2;
+    const y = bounds.y + bounds.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return bounds.width > 0 && bounds.height > 0 &&
+      x >= 0 && y >= 0 && x < innerWidth && y < innerHeight &&
+      hit !== null && (hit === button || button.contains(hit));
   }
 
   function scanPlayers() {
     scanTimeout = undefined;
-    if (!enabled) return;
+    if (!enabled || requestInFlight || document.visibilityState !== "visible" ||
+        location.pathname !== "/watch") return;
 
     // Reloading/removing an extension invalidates its old content scripts.
     try {
@@ -72,9 +87,12 @@
         const lastClick = lastClicks.get(button);
         if (lastClick !== undefined && now - lastClick < CLICK_COOLDOWN_MS) continue;
         lastClicks.set(button, now);
-        button.click();
-        // One click per player per scan; do not click a stale second button.
-        break;
+        requestInFlight = true;
+        chrome.runtime.sendMessage({ type: "skip-ad", url: location.href })
+          .catch(() => {})
+          .finally(() => { requestInFlight = false; });
+        // The worker validates the current button again before browser input.
+        return;
       }
     }
   }
@@ -133,6 +151,10 @@
     if (area !== "local" || !changes.enabled) return;
     storageRevision += 1;
     setEnabled(changes.enabled.newValue !== false);
+  });
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") reconcilePlayers();
   });
 
   const initialRevision = storageRevision;

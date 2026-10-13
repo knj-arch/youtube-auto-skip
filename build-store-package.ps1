@@ -14,7 +14,7 @@ if ($taskManifest.manifest_version -ne 3 -or $taskManifest.version -notmatch '^\
 }
 
 # An explicit allowlist keeps store artwork and documentation out of the upload.
-$taskFiles = @('manifest.json', 'content.js', 'popup.html', 'popup.css', 'popup.js')
+$taskFiles = @('manifest.json', 'content.js', 'background.js', 'popup.html', 'popup.css', 'popup.js')
 $taskFiles += @($taskManifest.icons.PSObject.Properties.Value)
 $taskFiles = @($taskFiles | Sort-Object -Unique)
 $taskRootPrefix = $taskRoot.TrimEnd('\', '/') + [System.IO.Path]::DirectorySeparatorChar

@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "유튜브 자동 건너뛰기",
-  "version": "1.0.0",
+  "version": "1.0.1",
+  "minimum_chrome_version": "106",
   "description": "유튜브 광고의 건너뛰기 버튼이 나타나면 자동으로 클릭합니다.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "debugger"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

@@ -1,4 +1,6 @@
-유튜브 자동 건너뛰기 — 웹 스토어 제출 순서
+유튜브 자동 건너뛰기 — 버전 1.0.1 수정·교체 제출 순서
+
+2026-10-13 기준: 최초 버전 1.0.0은 심사 제출 후 검토 대기를 확인한 이력이 있으며 실제 광고 검증은 실패했습니다. 1.0.1은 debugger 입력으로 수정·재검증 중입니다. 아래 취소·교체와 새 버전 제출은 실제 광고에서 자동 건너뛰기 성공을 확인한 뒤에만 진행합니다. 검증 기록과 실제 제출 상태는 store/verification.txt 및 store/submission-status.json에 따로 기록합니다.
 
 1. 개발자 등록
 https://chrome.google.com/webstore/devconsole
@@ -8,16 +10,20 @@ https://chrome.google.com/webstore/devconsole
 2. 로컬 동작 확인
 chrome://extensions → 개발자 모드 → 압축해제된 확장 프로그램 로드
 manifest.json이 들어 있는 youtube-auto-skip 폴더를 선택하고 유튜브 탭을 새로고침합니다.
-실제로 건너뛰기 가능한 광고가 나왔을 때 버튼이 자동으로 눌리는지 확인합니다. 광고가 나오지 않았다면 실제 광고 검증이 끝난 것이 아닙니다. 토글을 끈 상태에서는 자동 클릭이 멈추는지도 확인합니다.
+기존에 로컬 버전을 설치했다면 새 manifest와 코드를 로드하도록 확장 프로그램 새로고침을 누릅니다. debugger 권한 추가로 Chrome에 페이지 디버거 접근 및 모든 웹사이트의 데이터 읽기·변경 경고가 표시될 수 있습니다. 실제 코드 사용 대상은 현재 보고 있는 Chrome 창의 활성 YouTube /watch 영상 탭입니다. 클릭 처리 중 디버깅 알림이 잠시 나타날 수 있습니다.
+현재 보고 있는 YouTube 영상 탭에서 실제로 건너뛰기 가능한 광고가 나왔을 때 버튼이 자동으로 눌리고 광고가 끝나는지 확인합니다. 광고가 나오지 않았거나 버튼 감지만 확인했다면 실제 광고 검증이 끝난 것이 아닙니다. 토글을 끈 상태, 다른 탭·다른 프로그램을 보고 있는 상태에서는 자동 클릭하지 않는지도 확인합니다.
 
-3. ZIP 업로드
-새 항목 추가 → dist/youtube-auto-skip-1.0.0.zip 업로드
+3. 실제 검증 후 기존 제출 취소 및 ZIP 교체
+자동 건너뛰기 성공 확인 전에는 이 단계를 진행하지 않습니다.
+기존 확장 프로그램 항목을 열고 1.0.0 검토 대기 제출을 취소합니다. 같은 항목에 새 버전 패키지 dist/youtube-auto-skip-1.0.1.zip을 업로드합니다. 새 항목을 만들지 않아야 기존 확장 프로그램 ID를 유지할 수 있습니다.
 이 파일은 manifest.json이 ZIP 최상위에 있는 스토어 업로드용입니다.
 Development 폴더의 예전 youtube-auto-skip.zip은 폴더 전달용이므로 스토어 업로드에는 사용하지 않습니다.
 다시 패키징할 때는 프로젝트 폴더에서 build-store-package.ps1을 실행합니다.
+background.js, content.js, popup 파일과 아이콘이 최종 manifest와 함께 포함됐는지 확인합니다. .verification/ 산출물, 브라우저 프로필 및 개인 계정 정보는 패키지나 GitHub에 포함하지 않습니다.
 
 4. 스토어 페이지 입력
 store/submission.txt에서 소개, 단일 목적, 권한 사유와 데이터 처리 내용을 복사합니다.
+추가된 debugger 권한 사유와 넓은 Chrome 권한 경고를 정확히 공개합니다. 현재 탭 주소·상태와 버튼 DOM·좌표의 로컬 처리에 맞춰 데이터 공개 항목도 갱신합니다. API 업로드만으로 스토어의 소개나 개인정보 입력이 변경되지는 않습니다.
 기본 언어: 한국어. 가격: 무료. 카테고리: 기능과 가장 가까운 항목을 대시보드에서 선택합니다.
 아이콘: icons/icon128.png
 작은 홍보 이미지: store/assets/promo-440x280.png
@@ -37,9 +43,9 @@ GitHub Actions의 Publish privacy policy 실행이 성공하고 위 주소가 �
 같은 계정으로 다른 PC에서도 설치할 수 있도록 배포 지역은 필요한 국가를 포함합니다.
 다른 계정도 링크로 설치하게 하려면 Unlisted를 선택할 수 있습니다. Unlisted는 링크를 아는 모든 사람이 설치할 수 있는 방식입니다.
 
-7. 심사 제출
-실제 광고 동작과 작성 내용, 배포 범위를 확인한 뒤 심사 제출을 누릅니다.
-2026-10-13에 최초 버전 1.0.0을 Aside CLI 브라우저로 심사에 제출했고 '검토 대기 중'을 확인했습니다. 제출 기록은 store/submission-status.json에 있습니다. 개인정보처리방침은 GitHub Pages에 게시했습니다.
+7. 새 버전 심사 제출
+실제 광고 자동 건너뛰기 성공, 권한 사용 이유, 개인정보 공개 내용과 배포 범위를 확인한 뒤 새 버전 심사 제출을 누릅니다.
+2026-10-13에 최초 버전 1.0.0을 Aside CLI 브라우저로 심사에 제출했고 '검토 대기 중'을 확인했습니다. 이것은 이전 제출 기록이며 1.0.1의 검증·제출 완료를 뜻하지 않습니다. 새 버전 제출 후에는 대시보드에서 실제 버전과 상태를 확인하여 store/submission-status.json을 갱신합니다. 개인정보처리방침은 최신 1.0.1 문서가 GitHub Pages에 반영됐는지 확인합니다.
 승인 후 해당 Google 계정으로 Chrome 웹 스토어에서 확장 프로그램을 설치합니다.
 다른 PC의 Chrome 프로필에도 같은 계정으로 로그인하고 확장 프로그램을 계정에 저장하도록 설정하면 가져올 수 있습니다. 확장 프로그램 안의 켜기/끄기 설정은 현재 각 PC에 따로 저장됩니다.
 
@@ -48,5 +54,7 @@ GitHub Actions의 Publish privacy policy 실행이 성공하고 위 주소가 �
 제출 준비 및 ZIP: https://developer.chrome.com/docs/webstore/prepare
 이미지 규격: https://developer.chrome.com/docs/webstore/images
 개인정보 항목: https://developer.chrome.com/docs/webstore/cws-dashboard-privacy
+debugger API: https://developer.chrome.com/docs/extensions/reference/api/debugger
+debugger 권한 경고: https://developer.chrome.com/docs/extensions/reference/permissions-list#debugger
 Private 배포: https://developer.chrome.com/docs/webstore/cws-dashboard-distribution
 계정에 저장할 정보: https://support.google.com/chrome/answer/165139?hl=ko

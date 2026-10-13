@@ -6,6 +6,7 @@ on:
     paths:
       - manifest.json
       - content.js
+      - background.js
       - popup.html
       - popup.css
       - popup.js
@@ -42,11 +43,12 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check content.js
+          node --check background.js
           node --check popup.js
           node --check scripts/deploy-cws.mjs
           node --check scripts/prepare-release.mjs
       - name: Check deployment behavior without network requests
-        run: node --test tests/*.test.mjs
+        run: node --test tests/*.test.mjs tests/*.test.cjs
       - name: Prepare the version for this run
         id: version
         run: node scripts/prepare-release.mjs

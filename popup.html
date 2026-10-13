@@ -24,7 +24,7 @@
           <span class="setting-title">광고 자동 건너뛰기</span>
           <span id="state" class="state" role="status">설정 불러오는 중…</span>
         </span>
-        <input id="enabled" type="checkbox" role="switch" disabled aria-describedby="description limitation">
+        <input id="enabled" type="checkbox" role="switch" disabled aria-describedby="description limitation permission">
       </label>
 
       <p id="limitation" class="note">
@@ -34,6 +34,11 @@
         </svg>
         <span>버튼이 없는 광고는 그대로 재생돼요.</span>
       </p>
+      <details class="permission" id="permission">
+        <summary>자동 클릭 권한 안내</summary>
+        <p>Chrome에서 ‘모든 웹사이트 데이터 읽기 및 변경’ 권한을 표시해요. 실제 자동 클릭은 현재 보고 있는 유튜브 영상의 건너뛰기 버튼으로 제한돼요.</p>
+        <p>Chrome의 디버깅 안내에서 취소하면 자동 건너뛰기가 꺼져요.</p>
+      </details>
       <p id="error" class="error" role="alert" hidden></p>
     </main>
   </body>
