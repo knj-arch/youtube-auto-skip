@@ -49,6 +49,7 @@ function harness(options = {}) {
     elementFromPoint() { return state.covered ? {} : button; }
   });
   const runtimeListeners = [], storageListeners = [];
+  const window = eventTarget();
   const chrome = {
     runtime: {
       id: "own-extension", onMessage: { addListener: fn => runtimeListeners.push(fn) },
@@ -76,7 +77,7 @@ function harness(options = {}) {
   };
   class Clock extends Date { static now() { return now; } }
   vm.runInNewContext(source, {
-    chrome, document, URL, Date: Clock, innerWidth: 1000, innerHeight: 800,
+    chrome, document, window, URL, Date: Clock, innerWidth: 1000, innerHeight: 800,
     location: { get href() { return href; }, get pathname() { return new URL(href).pathname; } },
     getComputedStyle: () => ({ visibility: "visible", pointerEvents: "auto", display: "block",
       contentVisibility: "visible", opacity: "1" }),
@@ -89,7 +90,7 @@ function harness(options = {}) {
     setInterval: (fn, delay) => addTimer(fn, delay, delay), clearInterval: id => timers.delete(id)
   });
   return {
-    calls, seeks, state, video, player, document,
+    calls, seeks, state, video, player, document, window,
     actions: () => calls.filter(message => message.type !== "ad-reload-state"),
     async advance(milliseconds) {
       await flush();
@@ -349,4 +350,153 @@ test("a changed limit racing the initial preference read is not overwritten", as
   h.maxReloads(5);
   await h.advance(100);
   assert.deepEqual(h.actions().map(message => message.type), ["reload-ad"]);
+});
+
+test("an undefined, malformed, rejected or synchronously failed initial state recovers after three seconds", async () => {
+  const failures = [
+    () => undefined,
+    () => ({ ok: false, reloadCount: 0 }),
+    () => ({ ok: true, reloadCount: "0" }),
+    () => ({ ok: true, reloadCount: -1 }),
+    () => Promise.reject(new Error("Temporary message failure")),
+    () => { throw new Error("Temporary synchronous message failure"); }
+  ];
+  for (const fail of failures) {
+    let reads = 0;
+    const h = harness({ button: false, reloadState: () => ++reads === 1 ? fail() :
+      { ok: true, reloaded: false, reloadCount: 0, retryAfterMs: 0 } });
+    await h.advance(2900);
+    assert.equal(reads, 1);
+    assert.deepEqual(h.actions(), []);
+    await h.advance(500);
+    assert.equal(reads, 2);
+    assert.deepEqual(h.actions().map(message => message.type), ["reload-ad"]);
+    await h.advance(10000);
+    assert.equal(reads, 2);
+  }
+});
+
+test("unknown state reads stay rate limited while the existing skip fallback remains available", async () => {
+  const h = harness({ reloadState: () => ({ ok: false, reason: "reload-state-unavailable" }) });
+  await h.advance(10000);
+  assert.equal(h.calls.filter(message => message.type === "ad-reload-state").length, 4);
+  assert.ok(h.actions().length > 0);
+  assert.ok(h.actions().every(message => message.type === "skip-ad"));
+});
+
+test("state retries preserve the stored attempt cap and its remaining retry interval", async () => {
+  for (const maxReloads of [1, 3]) {
+    let reads = 0;
+    const h = harness({ maxReloads, reloadState: () => ++reads === 1 ? undefined :
+      { ok: true, reloaded: true, reloadCount: maxReloads, retryAfterMs: 0 } });
+    await h.advance(10000);
+    assert.equal(reads, 2);
+    assert.ok(h.actions().length > 0);
+    assert.ok(h.actions().every(message => message.type === "skip-ad"));
+  }
+  let reads = 0;
+  const h = harness({ button: false, reloadState: () => ++reads === 1 ? undefined :
+    { ok: true, reloaded: true, reloadCount: 1, retryAfterMs: 4000 } });
+  await h.advance(6900);
+  assert.equal(reads, 2);
+  assert.deepEqual(h.actions(), []);
+  await h.advance(500);
+  assert.deepEqual(h.actions().map(message => message.type), ["reload-ad"]);
+});
+
+test("focus and visibility activation resume failed state reads without reading in the background", async () => {
+  for (const hidden of [false, true]) {
+    let reads = 0;
+    const h = harness({ button: false, reloadState: () => ++reads === 1 ? undefined :
+      { ok: true, reloaded: false, reloadCount: 0, retryAfterMs: 0 } });
+    await h.advance(100);
+    if (hidden) h.document.visibilityState = "hidden";
+    else h.state.focused = false;
+    await h.advance(10000);
+    assert.equal(reads, 1);
+    assert.deepEqual(h.actions(), []);
+    if (hidden) {
+      h.document.visibilityState = "visible";
+      h.document.emit("visibilitychange");
+    } else {
+      h.state.focused = true;
+      h.window.emit("focus");
+    }
+    await h.advance(100);
+    assert.equal(reads, 2);
+    assert.deepEqual(h.actions().map(message => message.type), ["reload-ad"]);
+  }
+});
+
+test("an initially hidden or unfocused page waits until activation before its first state read", async () => {
+  for (const hidden of [false, true]) {
+    const h = harness({ button: false, state: { focused: hidden } });
+    if (hidden) h.document.visibilityState = "hidden";
+    await h.advance(5000);
+    assert.equal(h.calls.length, 0);
+    if (hidden) {
+      h.document.visibilityState = "visible";
+      h.document.emit("visibilitychange");
+    } else {
+      h.state.focused = true;
+      h.window.emit("focus");
+    }
+    await h.advance(100);
+    assert.deepEqual(h.actions().map(message => message.type), ["reload-ad"]);
+  }
+});
+
+test("a delayed state read never overlaps another read after repeated activation events", async () => {
+  let resolve;
+  const pending = new Promise(done => { resolve = done; });
+  const h = harness({ reloadState: () => pending });
+  await h.advance(100);
+  for (let repeat = 0; repeat < 4; repeat++) {
+    h.window.emit("focus");
+    h.document.emit("visibilitychange");
+    await h.advance(3000);
+  }
+  assert.equal(h.calls.filter(message => message.type === "ad-reload-state").length, 1);
+  assert.deepEqual(h.actions(), []);
+  resolve({ ok: true, reloaded: true, reloadCount: 3, retryAfterMs: 0 });
+  await h.advance(100);
+  assert.deepEqual(h.actions().map(message => message.type), ["skip-ad"]);
+});
+
+test("turning off during a delayed retry prevents both late recovery and further queries", async () => {
+  let reads = 0, resolve;
+  const delayed = new Promise(done => { resolve = done; });
+  const h = harness({ button: false, reloadState: () => ++reads === 1 ? undefined : delayed });
+  await h.advance(3200);
+  assert.equal(reads, 2);
+  h.enabled(false);
+  resolve({ ok: true, reloaded: false, reloadCount: 0, retryAfterMs: 0 });
+  h.window.emit("focus");
+  h.document.emit("visibilitychange");
+  await h.advance(10000);
+  assert.equal(reads, 2);
+  assert.deepEqual(h.actions(), []);
+});
+
+test("a retry response from the previous SPA video cannot override the current video's persisted cap", async () => {
+  let readsForA = 0, resolve;
+  const delayed = new Promise(done => { resolve = done; });
+  const h = harness({ reloadState: message => message.url === WATCH ?
+    ++readsForA === 1 ? undefined : delayed : { ok: true, reloaded: true, reloadCount: 3, retryAfterMs: 0 } });
+  await h.advance(3200);
+  assert.equal(readsForA, 2);
+  h.navigate("https://www.youtube.com/watch?v=video-b");
+  await h.advance(100);
+  resolve({ ok: true, reloaded: false, reloadCount: 0, retryAfterMs: 0 });
+  await h.advance(10000);
+  assert.equal(readsForA, 2);
+  assert.ok(h.actions().every(message => message.type === "skip-ad"));
+});
+
+test("an uncertain reload-ad response does not enable extra refreshes using an unverified old count", async () => {
+  const h = harness({ reloadReply: () => Promise.reject(new Error("Reload response channel closed")) });
+  await h.advance(10000);
+  assert.equal(h.actions().filter(message => message.type === "reload-ad").length, 1);
+  assert.equal(h.calls.filter(message => message.type === "ad-reload-state").length, 1);
+  assert.ok(h.actions().some(message => message.type === "skip-ad"));
 });

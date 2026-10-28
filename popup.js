@@ -5,6 +5,7 @@ const state = document.getElementById("state");
 const maxReloadsInput = document.getElementById("max-reloads");
 const reloadState = document.getElementById("reload-state");
 const error = document.getElementById("error");
+document.getElementById("version").textContent = `버전 ${chrome.runtime.getManifest().version}`;
 
 const DEFAULT_MAX_RELOADS = 3;
 let confirmedEnabled = true;

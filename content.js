@@ -12,6 +12,7 @@
   ].join(",");
   const CLICK_COOLDOWN_MS = 1500;
   const RELOAD_INTERVAL_MS = 3000;
+  const STATE_READ_RETRY_MS = 3000;
   const MAIN_VIDEO_SETTLE_MS = 500;
   const RESUME_TIMEOUT_MS = 15000;
   const players = new Map();
@@ -60,34 +61,58 @@
     return enabled && videoState === state && watchVideoId() === state.id;
   }
 
-  function syncVideoState() {
-    const id = watchVideoId();
-    if (videoState?.id === id) return videoState;
-    videoState = undefined;
-    if (!id) return;
-    const state = { id, ready: false, reloadCount: 0, refreshUnavailable: false, reloading: false,
-      lastMainTime: 0, nextReloadAttempt: 0 };
-    videoState = state;
-    chrome.runtime.sendMessage({ type: "ad-reload-state", url: location.href }).then(reply => {
+  function readReloadState(state) {
+    if (!state || !isCurrent(state) || state.ready || state.stateReadInFlight ||
+        document.visibilityState !== "visible" || !document.hasFocus() ||
+        Date.now() < state.nextStateReadAt) return;
+    state.stateReadInFlight = true;
+    state.nextStateReadAt = Date.now() + STATE_READ_RETRY_MS;
+    let request;
+    try {
+      request = chrome.runtime.sendMessage({ type: "ad-reload-state", url: location.href });
+    } catch {
+      state.stateReadInFlight = false;
+      state.ready = false;
+      state.refreshUnavailable = true;
+      scheduleScan();
+      return;
+    }
+    Promise.resolve(request).then(reply => {
       if (!isCurrent(state)) return;
       // Refresh only with a known, persisted attempt count.
       state.refreshUnavailable = reply?.ok !== true || !Number.isInteger(reply.reloadCount) ||
         reply.reloadCount < 0;
-      if (!state.refreshUnavailable) state.reloadCount = reply.reloadCount;
+      state.ready = !state.refreshUnavailable;
+      if (!state.ready) return;
+      state.reloadCount = reply.reloadCount;
       if (Number.isFinite(reply?.retryAfterMs) && reply.retryAfterMs > 0) {
         state.nextReloadAttempt = Date.now() + reply.retryAfterMs;
       }
       if (reply?.ok && reply.reloaded && Number.isFinite(reply.resumeTime) && reply.resumeTime > 0) {
         state.resumeTime = reply.resumeTime;
       }
-      state.ready = true;
-      scheduleScan();
     }).catch(() => {
       if (!isCurrent(state)) return;
+      state.ready = false;
       state.refreshUnavailable = true;
-      state.ready = true;
-      scheduleScan();
+    }).finally(() => {
+      state.stateReadInFlight = false;
+      if (isCurrent(state)) scheduleScan();
     });
+  }
+
+  function syncVideoState() {
+    const id = watchVideoId();
+    if (videoState && videoState.id === id) {
+      readReloadState(videoState);
+      return videoState;
+    }
+    videoState = undefined;
+    if (!id) return;
+    const state = { id, ready: false, reloadCount: 0, refreshUnavailable: false, reloading: false,
+      stateReadInFlight: false, nextStateReadAt: 0, lastMainTime: 0, nextReloadAttempt: 0 };
+    videoState = state;
+    readReloadState(state);
     return state;
   }
 
@@ -211,7 +236,7 @@
     }
 
     const state = syncVideoState();
-    if (!state?.ready || state.reloading) return;
+    if (!state || state.reloading || (!state.ready && !state.refreshUnavailable)) return;
 
     for (const player of players.keys()) {
       if (!player.isConnected) continue;
@@ -220,7 +245,7 @@
 
       // Retry while the user's persisted budget remains. After the limit,
       // wait for an eligible skip button instead of refreshing indefinitely.
-      if (!state.refreshUnavailable && state.reloadCount < maxReloads) {
+      if (state.ready && !state.refreshUnavailable && state.reloadCount < maxReloads) {
         if (Date.now() >= state.nextReloadAttempt) requestReload(state);
         return;
       }
@@ -339,6 +364,7 @@
     if (document.visibilityState === "visible") reconcilePlayers();
   });
   document.addEventListener("yt-navigate-finish", reconcilePlayers);
+  window.addEventListener("focus", reconcilePlayers);
 
   const initialRevision = storageRevision;
   const initialLimitRevision = reloadLimitRevision;

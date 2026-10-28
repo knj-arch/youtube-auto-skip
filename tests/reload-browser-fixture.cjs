@@ -60,7 +60,7 @@ async function eventually(check, description, timeout = 7000) {
   let checks = 0;
   const record = name => { checks += 1; console.log("PASS " + name); };
   const sourceHashes = {};
-  for (const name of ["content.js", "background.js", "popup.js"]) {
+  for (const name of ["content.js", "background.js", "popup.js", "popup.html", "popup.css", "manifest.json"]) {
     sourceHashes[name] = crypto.createHash("sha256").update(await fs.readFile(path.join(extensionRoot, name))).digest("hex");
   }
   try {
@@ -153,14 +153,66 @@ async function eventually(check, description, timeout = 7000) {
       assert.equal(scenario.loads.get(id), limit + 1);
       assertReloadSpacing(id);
     };
+    const currentOnlyTabId = async () => {
+      const ids = await worker.evaluate(() => chrome.tabs.query({}).then(tabs => tabs.map(tab => tab.id)));
+      assert.equal(ids.length, 1, "Failure injection requires exactly one isolated test tab");
+      return ids[0];
+    };
+    const injectFirstSessionReadFailure = async tabId => worker.evaluate(id => {
+      if (self.fixtureRestoreSessionGet) self.fixtureRestoreSessionGet();
+      const original = chrome.storage.session.get;
+      const key = "ad-reload:" + id;
+      self.fixtureSessionReadFault = { key, failures: 0, failedAt: undefined, restored: false };
+      self.fixtureRestoreSessionGet = () => {
+        chrome.storage.session.get = original;
+        self.fixtureSessionReadFault.restored = true;
+        delete self.fixtureRestoreSessionGet;
+      };
+      chrome.storage.session.get = function (keys, ...args) {
+        if (keys === key) {
+          self.fixtureSessionReadFault.failures += 1;
+          self.fixtureSessionReadFault.failedAt = Date.now();
+          self.fixtureRestoreSessionGet();
+          return Promise.reject(new Error("Synthetic one-time session storage read failure"));
+        }
+        return original.call(chrome.storage.session, keys, ...args);
+      };
+      if (chrome.storage.session.get === original) throw new Error("Session failure injection was not installed");
+    }, tabId);
+    const restoreSessionRead = async () => worker.evaluate(() => {
+      if (self.fixtureRestoreSessionGet) self.fixtureRestoreSessionGet();
+      return self.fixtureSessionReadFault;
+    });
+    const waitForStateRetry = async id => {
+      await eventually(async () => (await messages()).filter(item =>
+        item.type === "ad-reload-state" && item.url.includes("v=" + id)).length >= 2,
+      "Content script did not retry its transient initial state lookup", 8000);
+      const requests = (await messages()).filter(item => item.type === "ad-reload-state" &&
+        item.url.includes("v=" + id));
+      assert.ok(requests[1].at - requests[0].at >= 2950,
+        "Initial state lookup was retried before its 3-second recovery delay");
+    };
 
     let popup = await openPopup();
+    await eventually(async () => (await popup.locator("#version").textContent()).includes("1.0.3"),
+      "Popup did not display the current 1.0.3 extension version");
+    await popup.setViewportSize({ width: 352, height: 600 });
+    const popupLayout = await popup.evaluate(() => ({
+      viewportWidth: innerWidth, viewportHeight: innerHeight,
+      documentWidth: document.documentElement.scrollWidth,
+      documentHeight: document.documentElement.scrollHeight,
+      versionBottom: document.querySelector("#version").getBoundingClientRect().bottom,
+      updateHintBottom: document.querySelector(".update-hint").getBoundingClientRect().bottom
+    }));
+    await fs.mkdir(path.join(extensionRoot, "dist"), { recursive: true });
+    await popup.screenshot({ path: path.join(extensionRoot, "dist", "popup-1.0.3.png") });
+    console.log("POPUP_LAYOUT " + JSON.stringify(popupLayout));
     assert.equal(await popup.locator("#max-reloads").inputValue(), "3");
     assert.equal(await popup.locator("#max-reloads").getAttribute("min"), "1");
     assert.equal(await popup.locator("#max-reloads").getAttribute("max"), "10");
     assert.equal(await savedLimit(), undefined);
     await popup.close();
-    record("popup shows the default limit of 3 and the supported range 1 through 10");
+    record("popup shows version 1.0.3, the default limit of 3 and the supported range 1 through 10");
 
     let page = await reset();
     await go(page, "watch?v=fixture-default");
@@ -239,6 +291,61 @@ async function eventually(check, description, timeout = 7000) {
     assert.equal((await messages()).find(item => item.type === "reload-ad").resumeTime, 3);
     assert.equal(scenario.loads.get("fixture-resume"), 4);
     record("three midroll reloads preserve the original main time, restore it, and clear only the resume payload");
+
+    page = await reset({ reloadsBeforeButton: 1 });
+    await setLimitThroughPopup(1);
+    let tabId = await currentOnlyTabId();
+    await injectFirstSessionReadFailure(tabId);
+    try {
+      await go(page, "watch?v=fixture-state-recovery");
+      await eventually(() => worker.evaluate(() => self.fixtureSessionReadFault?.failures === 1),
+        "Initial state read did not receive the injected failure");
+      await sleep(500);
+      assert.equal(scenario.loads.get("fixture-state-recovery"), 1);
+      await waitForStateRetry("fixture-state-recovery");
+      await waitForSkip(page, "fixture-state-recovery", 1);
+      const fault = await restoreSessionRead();
+      assert.equal(fault.failures, 1);
+      assert.equal(fault.restored, true);
+    } finally {
+      await restoreSessionRead();
+    }
+    record("a transient first state-read failure recovers after 3 seconds and resumes guarded reloads");
+
+    page = await reset({ reloadsBeforeButton: 99 });
+    await setLimitThroughPopup(3);
+    tabId = await currentOnlyTabId();
+    await worker.evaluate(id => chrome.storage.session.set({ ["ad-reload:" + id]: {
+      videoId: "fixture-persisted-limit", reloadCount: 3, lastReloadAt: Date.now() - 10000,
+      sourceDocumentId: "fixture-previous-document"
+    } }), tabId);
+    await injectFirstSessionReadFailure(tabId);
+    try {
+      await go(page, "watch?v=fixture-persisted-limit");
+      await eventually(() => worker.evaluate(() => self.fixtureSessionReadFault?.failures === 1),
+        "Persisted-limit state lookup did not receive its initial failure");
+      await waitForStateRetry("fixture-persisted-limit");
+      assert.equal(scenario.loads.get("fixture-persisted-limit"), 1);
+      const records = await worker.evaluate(() => chrome.storage.session.get(null));
+      assert.equal(records["ad-reload:" + tabId].reloadCount, 3);
+      await page.evaluate(() => {
+        const button = document.createElement("button");
+        button.className = "ytp-skip-ad-button";
+        button.textContent = "Skip ad";
+        button.addEventListener("click", event => {
+          window.fixtureClicks.push({ trusted: event.isTrusted });
+          if (event.isTrusted) document.querySelector(".html5-video-player").classList.remove("ad-showing");
+        });
+        document.querySelector(".html5-video-player").append(button);
+      });
+      await eventually(() => page.evaluate(() => window.fixtureClicks.some(item => item.trusted)),
+        "Recovered exhausted budget did not use trusted skip fallback");
+      assert.equal(scenario.loads.get("fixture-persisted-limit"), 1);
+      assert.equal((await messages()).filter(item => item.type === "reload-ad").length, 0);
+    } finally {
+      await restoreSessionRead();
+    }
+    record("state recovery preserves an exhausted persisted budget and skips without another reload");
 
     await worker.evaluate(() => chrome.storage.local.set({ enabled: false }));
     page = await reset({ firstButton: true });

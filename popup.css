@@ -55,6 +55,8 @@ input[type="number"][aria-invalid="true"] { border-color: #c53045; }
 .permission summary { cursor: pointer; width: fit-content; }
 .permission summary:focus-visible { outline: 2px solid #bac8ff; outline-offset: 3px; border-radius: 2px; }
 .permission p { margin: 8px 0 0; word-break: keep-all; }
+.update-hint { margin: 14px 0 0; color: #6c788b; font-size: 11px; line-height: 1.6; word-break: keep-all; }
+.version { margin: 8px 0 0; color: #727d90; font-size: 10px; line-height: 1.4; }
 .error { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; color: #a12432; background: #fff2f3; font-size: 12px; line-height: 1.6; word-break: keep-all; }
 @media (prefers-reduced-motion: reduce) {
   input[type="checkbox"], input[type="checkbox"]::before { transition: none; }
