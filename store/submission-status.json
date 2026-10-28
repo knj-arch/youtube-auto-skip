@@ -7,8 +7,19 @@
   "submitted_on": "2026-10-28",
   "confirmed_status": "PENDING_REVIEW",
   "confirmed_status_label": "검토 대기 중",
-  "confirmed_at_utc": "2026-10-28T05:26:34Z",
-  "confirmation_source": "Chrome Web Store API v2 response in GitHub Actions; refreshed developer dashboard in the user's Aside window",
+  "confirmed_at_utc": "2026-10-28T05:45:06.847Z",
+  "confirmation_source": "Read-only Chrome Web Store API v2 fetchStatus in GitHub Actions",
+  "latest_status_check": {
+    "workflow_run_id": "40639779830",
+    "workflow_url": "https://github.com/knj-arch/youtube-auto-skip/actions/runs/40639779830",
+    "checked_at_kst": "2026-10-28 14:45:06 KST",
+    "published_version": "1.0.1",
+    "published_state": "PUBLISHED_TO_TESTERS",
+    "submitted_version": "1.0.2.5",
+    "submitted_state": "PENDING_REVIEW",
+    "taken_down": false,
+    "warned": false
+  },
   "previous_published_version": "1.0.1",
   "permissions": [
     "storage",
