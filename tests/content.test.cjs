@@ -15,7 +15,7 @@ function eventTarget(target = {}) {
       listeners.get(type).add(fn);
     },
     removeEventListener(type, fn) { listeners.get(type)?.delete(fn); },
-    emit(type) { for (const fn of listeners.get(type) || []) fn({ type }); },
+    emit(type, details = {}) { for (const fn of listeners.get(type) || []) fn({ type, target: this, ...details }); },
     listeners
   });
 }
@@ -24,26 +24,29 @@ function harness(options = {}) {
   const calls = [], seeks = [], observers = [], timers = new Map();
   let now = 10000, nextTimer = 0, href = options.url || WATCH, mediaTime = options.time || 0;
   const state = { focused: true, covered: false, button: options.button !== false, ...options.state };
-  const video = eventTarget({ readyState: 1, duration: 600, seeking: false });
+  const video = eventTarget({ nodeType: 1, readyState: 1, duration: 600, seeking: false,
+    matches: selector => selector === "video", querySelector: () => null });
   Object.defineProperty(video, "currentTime", {
     get: () => mediaTime,
     set: value => { seeks.push(value); mediaTime = value; }
   });
   const player = {
-    ad: options.ad !== false, isConnected: true, parentElement: null,
-    matches() { return this.ad; },
-    querySelector(selector) { return selector.includes("video") ? video : null; },
+    nodeType: 1, ad: options.ad !== false, isConnected: options.playerPresent !== false, parentElement: null,
+    matches(selector) { return selector === ".html5-video-player" || this.ad; },
+    closest(selector) { return selector === ".html5-video-player" ? this : null; },
+    querySelector(selector) { return selector.startsWith("video") ? video : null; },
     querySelectorAll() { return state.button ? [button] : []; }
   };
   const button = {
-    isConnected: true, parentElement: player,
-    closest(selector) { return selector === ".html5-video-player" ? player : null; },
-    matches() { return false; }, getClientRects() { return [{}]; },
+    nodeType: 1, isConnected: true, parentElement: player,
+    closest(selector) { return selector === ".html5-video-player" ? player : selector.includes("ytp-") ? this : null; },
+    matches(selector) { return selector.includes("ytp-"); }, querySelector: () => null,
+    getClientRects() { return [{}]; },
     getBoundingClientRect() { return { x: 20, y: 20, width: 100, height: 40 }; },
     contains(hit) { return hit === this; }
   };
   const document = eventTarget({
-    visibilityState: "visible", hasFocus: () => state.focused,
+    nodeType: 9, visibilityState: "visible", hasFocus: () => state.focused,
     querySelectorAll() { return player.isConnected ? [player] : []; },
     querySelector() { return player.isConnected && player.ad ? player : null; },
     elementFromPoint() { return state.covered ? {} : button; }
@@ -80,18 +83,20 @@ function harness(options = {}) {
   vm.runInNewContext(source, {
     chrome, document, window, URL, Date: Clock, innerWidth: 1000, innerHeight: 800,
     location: { get href() { return href; }, get pathname() { return new URL(href).pathname; } },
-    getComputedStyle: () => ({ visibility: "visible", pointerEvents: "auto", display: "block",
-      contentVisibility: "visible", opacity: "1" }),
+    getComputedStyle: element => ({ visibility: "visible", pointerEvents: "auto", display: "block",
+      contentVisibility: "visible", opacity: element === button ? String(state.buttonOpacity ?? 1) : "1" }),
     MutationObserver: class {
       constructor(fn) { this.fn = fn; observers.push(this); }
-      observe() { this.active = true; }
+      observe(target, config) { this.active = true; this.target = target; this.config = config; }
       disconnect() { this.active = false; }
     },
+    queueMicrotask,
+    requestAnimationFrame: fn => addTimer(() => fn(now), 16), cancelAnimationFrame: id => timers.delete(id),
     setTimeout: (fn, delay) => addTimer(fn, delay), clearTimeout: id => timers.delete(id),
     setInterval: (fn, delay) => addTimer(fn, delay, delay), clearInterval: id => timers.delete(id)
   });
   return {
-    calls, seeks, state, video, player, document, window,
+    calls, seeks, state, video, player, button, document, window, observers,
     actions: () => calls.filter(message => message.type !== "ad-reload-state"),
     async advance(milliseconds) {
       await flush();
@@ -109,7 +114,24 @@ function harness(options = {}) {
       now = end;
       await flush();
     },
-    ad(value) { player.ad = value; for (const observer of observers) if (observer.active) observer.fn(); },
+    ad(value) {
+      player.ad = value;
+      for (const observer of observers) if (observer.active && observer.target === player) {
+        observer.fn([{ type: "attributes", target: player, attributeName: "class", addedNodes: [], removedNodes: [] }]);
+      }
+    },
+    attachPlayer() {
+      player.isConnected = true;
+      for (const observer of observers) if (observer.active && observer.target === document) {
+        observer.fn([{ type: "childList", target: document, addedNodes: [player], removedNodes: [] }]);
+      }
+    },
+    detachPlayer() {
+      player.isConnected = false;
+      for (const observer of observers) if (observer.active && observer.target === document) {
+        observer.fn([{ type: "childList", target: document, addedNodes: [], removedNodes: [player] }]);
+      }
+    },
     time(value) { mediaTime = value; video.emit("timeupdate"); },
     navigate(url) { href = url; document.emit("yt-navigate-finish"); },
     enabled(value) {
@@ -331,7 +353,7 @@ test("retry-later replies keep their server-provided delay instead of skipping o
   const h = harness({ reloadReply: () => ++attempts === 1 ?
     { ok: false, reason: "retry-later", retryAfterMs: 5000, reloadCount: 1 } :
     { ok: true, reloading: true, reloadCount: 2 } });
-  await h.advance(5000);
+  await h.advance(4999);
   assert.equal(attempts, 1);
   await h.advance(1500);
   assert.equal(attempts, 2);
@@ -523,7 +545,7 @@ test("transient reload failures recover after a delayed persisted-state read wit
     assert.equal(attempts, 1);
     assert.equal(h.diagnose().lastResult.reason, reason);
     assert.equal(h.diagnose().state.ready, false);
-    await h.advance(2800);
+    await h.advance(2799);
     assert.equal(attempts, 1);
     await h.advance(1300);
     assert.equal(attempts, 2);
@@ -571,4 +593,108 @@ test("diagnostics are read-only, omit viewing identifiers, and retain the pre-po
   assert.equal(JSON.stringify(snapshot).includes("video-a"), false);
   assert.equal(JSON.stringify(snapshot).includes("https://"), false);
   assert.equal(h.diagnose("unrelated-extension"), undefined);
+});
+
+test("an ad mutation is handled in the same task without a fixed scan timer", async () => {
+  const h = harness({ ad: false });
+  await h.advance(0);
+  assert.deepEqual(h.actions(), []);
+  h.ad(true);
+  await h.advance(0);
+  assert.equal(h.actions().filter(message => message.type === "reload-ad").length, 1);
+});
+
+test("a newly inserted player is discovered without waiting for the fallback poll", async () => {
+  const h = harness({ playerPresent: false });
+  await h.advance(250);
+  assert.deepEqual(h.actions(), []);
+  h.attachPlayer();
+  await h.advance(0);
+  assert.equal(h.actions().filter(message => message.type === "reload-ad").length, 1);
+});
+
+test("a burst of ad mutations dispatches only one request while the worker is pending", async () => {
+  let resolve;
+  const pending = new Promise(done => { resolve = done; });
+  const h = harness({ ad: false, reloadReply: () => pending });
+  await h.advance(0);
+  for (let i = 0; i < 100; i++) h.ad(true);
+  await h.advance(0);
+  for (let i = 0; i < 100; i++) h.ad(true);
+  await h.advance(0);
+  assert.equal(h.actions().length, 1);
+  resolve({ ok: true, reloading: true, reloadCount: 1 });
+  await h.advance(0);
+  assert.equal(h.actions().length, 1);
+});
+
+test("turning off invalidates queued scans and disconnects the discovery observer", async () => {
+  const h = harness({ ad: false });
+  await h.advance(0);
+  h.ad(true);
+  h.enabled(false);
+  await h.advance(0);
+  assert.deepEqual(h.actions(), []);
+  assert.ok(h.observers.every(observer => !observer.active));
+  h.enabled(true);
+  await h.advance(0);
+  assert.equal(h.actions().length, 1);
+});
+
+test("a player removed before the queued scan cannot trigger a stale action", async () => {
+  const h = harness({ ad: false });
+  await h.advance(0);
+  h.ad(true);
+  h.detachPlayer();
+  await h.advance(0);
+  assert.deepEqual(h.actions(), []);
+  h.attachPlayer();
+  await h.advance(0);
+  assert.equal(h.actions().length, 1);
+});
+
+test("discovering a foreground ad preserves the persisted retry interval and limit", async () => {
+  const h = harness({ playerPresent: false, retryAfterMs: 3000, button: false });
+  await h.advance(100);
+  h.attachPlayer();
+  await h.advance(2899);
+  assert.deepEqual(h.actions(), []);
+  await h.advance(1);
+  assert.equal(h.actions().length, 1);
+  const capped = harness({ playerPresent: false, reloadCount: 3, button: false });
+  await capped.advance(100);
+  capped.attachPlayer();
+  await capped.advance(10000);
+  assert.deepEqual(capped.actions(), []);
+});
+
+test("an appearing skip button is rechecked on its next frame without waiting for the one-second poll", async () => {
+  for (const type of ["transitionstart", "animationstart"]) {
+    const h = harness({ reloaded: true, state: { buttonOpacity: 0 } });
+    await h.advance(0);
+    assert.deepEqual(h.actions(), []);
+    h.document.emit(type, { target: h.button });
+    await h.advance(0);
+    assert.deepEqual(h.actions(), []);
+    h.state.buttonOpacity = 0.1;
+    await h.advance(16);
+    assert.deepEqual(h.actions().map(message => message.type), ["skip-ad"]);
+  }
+});
+
+test("turning off cancels a pending transition recheck and ignores unrelated animations", async () => {
+  const h = harness({ reloaded: true, state: { buttonOpacity: 0 } });
+  await h.advance(0);
+  h.document.emit("transitionstart", { target: h.button });
+  h.enabled(false);
+  h.state.buttonOpacity = 1;
+  await h.advance(30);
+  assert.deepEqual(h.actions(), []);
+  const unrelated = harness({ reloaded: true, state: { buttonOpacity: 0 } });
+  await unrelated.advance(0);
+  unrelated.document.emit("animationstart", { target: { nodeType: 1,
+    closest: selector => selector === ".html5-video-player" ? unrelated.player : null, querySelector: () => null } });
+  unrelated.state.buttonOpacity = 1;
+  await unrelated.advance(30);
+  assert.deepEqual(unrelated.actions(), []);
 });

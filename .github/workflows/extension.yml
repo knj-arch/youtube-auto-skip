@@ -10,9 +10,14 @@ on:
       - popup.html
       - popup.css
       - popup.js
+      - src/**
+      - package.json
+      - package-lock.json
+      - tsconfig.json
       - icons/**
       - build-store-package.ps1
       - scripts/prepare-release.mjs
+      - scripts/build.mjs
       - scripts/deploy-cws.mjs
       - tests/**
       - .github/workflows/extension.yml
@@ -40,6 +45,12 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
+      - name: Install pinned build dependencies
+        run: npm ci --ignore-scripts
+      - name: Check strict TypeScript and generated runtime scripts
+        run: |
+          npm run typecheck
+          npm run build:check
       - name: Validate JavaScript syntax
         run: |
           node --check content.js

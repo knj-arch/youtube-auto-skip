@@ -1,6 +1,47 @@
 검증 상태 — 2026-10-28
 
-현재 소스 버전 1.0.4 — 재현 결함 수정·최종 브라우저 검증 및 실제 광고 새로고침 관찰 완료
+현재 소스 버전 1.0.5 — strict TypeScript·감지 지연 개선, 최종 검증 완료
+• 원본 src/*.ts, 루트 content.js/background.js/popup.js는 esbuild 생성물. 일반 ZIP 사용자는 빌드 없이 설치
+• TypeScript 7.0.2 / esbuild 0.28.2 / @types/chrome 0.3.7 exact pin, strict/noUncheckedIndexedAccess/isolatedModules 적용
+• npm ci --ignore-scripts → npm test → npm run build:check 통과
+• Node 142/142 통과: worker 58 + content 42 + deployment 23 + popup 19
+• 실제 Chromium·MV3 브라우저 통합 19/19 통과, 검사 전후 source 해시 동일
+  - CSS opacity transition/animation으로 표시되는 버튼의 trusted 클릭
+  - 무관한 진행 막대 애니메이션 중 숨겨진 버튼 무조작
+  - 새로고침 한도·간격·중간 위치 복원·일시 실패 복구·예약 되돌리기·읽기 전용 진단·비활성 조건
+  - CSS 검사는 실제 reload로 한도 1회를 자연 소진하고 기존 1.5초 보호 간격이 지난 뒤 측정
+• 광고·버튼 DOM 변화 뒤 80ms 고정 대기 제거, 신규·교체 플레이어 즉시 발견
+  - 무관한 진행 막대·자막 변이는 정밀 검사에서 제외. 1초 보완 탐색 유지
+  - CSS lifecycle 이벤트와 다음 프레임 1회 재확인. 끄면 관찰자·이벤트·예약 프레임 정리
+  - 문서·URL·광고·초점·누적 횟수 검증, 반복 최소 3초 및 기존 실패 복구 정책 유지
+• 최종 1.0.5와 동결한 1.0.4의 동일 조건 비교: 조건별 24회, p50/p95/최대(ms)
+  - 광고 class: 85/93/100 → 2/3/3
+  - 플레이어 삽입: 570/1042/1094 → 5/7/7
+  - 플레이어 교체: 593/1052/1085 → 4/5/6
+  - DOM 변경부터 실제 worker 요청 수신까지. 로컬 합성 페이지이며 실제 광고 제거 시간 아님
+  - Date.now 정렬·양자화에 약 1ms 불확실성. 1초 범위에 분산한 동일 phase 사용
+  - 중복·끄기·소진 한도 대조 통과. headless의 문서 visibility가 visible로 남아도 실제 비활성 탭 reload는 0
+• DOM 잡음: 약 0.91초 동안 span 4,000개 삽입/삭제, 3회. 오탐 요청 0
+  - renderer TaskDuration 중앙값 16.223→30.637ms, ScriptDuration 0.451→7.343ms
+  - 관찰 비용은 증가. 테스트 DOM 작업을 포함한 값이며 확장 전용 CPU 사용량으로 해석하지 않음
+• 실제 YouTube 광고 관찰: 2026-10-28T07:39:11.913Z~07:39:34.609Z / 16:39:11~34(KST)
+  - 15.041초 광고 → reload1 → 15.041초 광고 → reload2 → 6.041초 광고 → reload3 → 223.381초 본영상
+  - 본영상 1.973226초까지 진행, 실제 reload 3 / 요청 3 / 저장 count 3, 간격 3,317ms·3,303ms
+  - 새 격리 프로필·실제 네트워크, 사용자 프로필 복사·HTTP 대체·외부 reload/skip 입력·세션 시드 없음
+  - 실제 skip 버튼·중간 광고 복원은 이 관찰에서 미관찰, 합성 통합 결과와 구분
+• 최종 runtime SHA256:
+  content.js FE24A5711A0FF49276C0F61D3646C1789F6C1F7F12D26A83F091013278330F91
+  background.js 7C304B2439E83CF7B8490ADECDD7AC55ED38BBD06CC387E173B6BE5744BC16C7
+  popup.js D87F6E6B2C6D8EAEB47A35B9E5324D471337455C734A79B7B00434257E91ECFB
+• 수동 설치 ZIP: youtube-auto-skip-1.0.5.zip, runtime 10개
+  SHA256 FF36AE70637B0785ACD9478FD599AB64E4D27144AF4A6E1FDAC182583736C3B6
+• 기존 1.0.4.7 심사는 검증된 1.0.5로 교체하기 위해 취소
+  읽기 전용 API 실행 40651671700, 2026-10-28T07:41:17.978Z / 16:41:17(KST): CANCELLED
+  기존 게시 버전 1.0.1/PUBLISHED_TO_TESTERS 유지. 1.0.5 새 제출·Release 공개는 이 기록 시점 준비 중
+• 권한·데이터 범위 변경 없음. 1.0.4의 다른 PC 작동은 사용자 확인, 1.0.5와 구분
+• 아래는 이전 1.0.4 및 그 이전 버전의 상세 이력
+
+이전 소스 버전 1.0.4 — 재현 결함 수정·최종 브라우저 검증 및 실제 광고 새로고침 관찰 완료
 • 수동 설치용 GitHub Release v1.0.4 공개 및 스토어 패키지 1.0.4.7 심사 제출 접수 완료. 새 버전 승인·게시 전
 • 이전 1.0.3.6 심사는 실제 Aside에서 취소. 읽기 전용 API 실행 40645367291이 2026-10-28T06:41:27.912Z / 15:41:27.912(KST)에 CANCELLED 확인
 • 15:45:28(KST) 최종 읽기 전용 API 조회 기준 게시 1.0.1 PUBLISHED_TO_TESTERS / 제출 1.0.4.7 PENDING_REVIEW

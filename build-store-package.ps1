@@ -7,6 +7,12 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $taskRoot = [System.IO.Path]::GetFullPath($PSScriptRoot)
+# Generated scripts stay at the extension root for ordinary unpacked installs.
+# Refuse to publish stale JavaScript after editing its TypeScript source.
+& node (Join-Path $taskRoot 'scripts/build.mjs') --check
+if ($LASTEXITCODE -ne 0) {
+    throw 'Generated scripts are missing or stale. Run npm ci and npm run build first.'
+}
 $taskManifestPath = Join-Path $taskRoot 'manifest.json'
 $taskManifest = Get-Content -LiteralPath $taskManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($taskManifest.manifest_version -ne 3 -or $taskManifest.version -notmatch '^\d+(\.\d+){0,3}$') {

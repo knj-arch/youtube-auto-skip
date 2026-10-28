@@ -241,6 +241,93 @@ async function eventually(check, description, timeout = 7000) {
       if (self.fixtureRestoreDelay) self.fixtureRestoreDelay();
       return self.fixtureDelay;
     });
+    const contentStatus = tabId => worker.evaluate(id => chrome.tabs.sendMessage(id,
+      { type: "automation-content-status" }, { frameId: 0 }), tabId);
+    const prepareCssSkip = async id => {
+      const cssPage = await reset({ reloadsBeforeButton: 99 });
+      await setLimitThroughPopup(1);
+      await go(cssPage, "watch?v=" + id);
+      await eventually(() => Promise.resolve(scenario.loads.get(id) === 2),
+        "CSS fixture did not naturally consume its single reload");
+      const cssTabId = await currentOnlyTabId();
+      await eventually(async () => {
+        const status = await contentStatus(cssTabId);
+        return status.state?.ready === true && status.state.reloadCount === 1;
+      }, "CSS fixture did not initialize its persisted exhausted budget");
+      const reloadRequest = (await messages()).filter(item => item.type === "reload-ad" &&
+        item.url.includes("v=" + id)).at(-1);
+      assert.ok(reloadRequest, "CSS fixture did not observe its natural reload request");
+      // The worker intentionally shares its 1.5-second skip cooldown with the
+      // preceding reload attempt. Measure CSS detection only after it expires.
+      await sleep(Math.max(0, reloadRequest.at + 1600 - Date.now()));
+      assert.equal(await cssPage.evaluate(() => window.fixtureClicks.length), 0);
+      assert.equal((await messages()).filter(item => item.type === "skip-ad").length, 0);
+      await cssPage.evaluate(() => {
+        const style = document.createElement("style");
+        style.textContent = `
+          .fixture-effect-skip { opacity: 0; transition: opacity 300ms linear; }
+          .fixture-effect-skip.fixture-transition-visible { opacity: 1; }
+          @keyframes fixture-skip-appear { from { opacity: 0; } to { opacity: 1; } }
+          .fixture-effect-skip.fixture-animation-visible { animation: fixture-skip-appear 300ms linear forwards; }
+          @keyframes fixture-progress-move { from { transform: scaleX(.1); } to { transform: scaleX(.9); } }
+          .fixture-progress { width: 100px; height: 4px; pointer-events: none;
+            animation: fixture-progress-move 200ms linear infinite; }
+        `;
+        document.head.append(style);
+        const button = document.createElement("button");
+        button.className = "ytp-skip-ad-button fixture-effect-skip";
+        button.textContent = "Skip ad";
+        window.fixtureCssEvents = [];
+        for (const type of ["transitionstart", "transitionend", "animationstart", "animationend"]) {
+          document.addEventListener(type, event => {
+            if (event.target === button) window.fixtureCssEvents.push({
+              type: event.type, trusted: event.isTrusted, at: performance.now()
+            });
+          }, true);
+        }
+        button.addEventListener("click", event => {
+          window.fixtureClicks.push({ trusted: event.isTrusted, at: performance.now(),
+            opacity: Number(getComputedStyle(button).opacity) });
+          if (event.isTrusted) document.querySelector(".html5-video-player").classList.remove("ad-showing");
+        });
+        document.querySelector(".html5-video-player").append(button);
+        window.fixtureInitialOpacity = Number(getComputedStyle(button).opacity);
+      });
+      assert.equal(await cssPage.evaluate(() => window.fixtureInitialOpacity), 0);
+      return { page: cssPage, tabId: cssTabId, id };
+    };
+    const waitForFreshForegroundScan = async tabId => {
+      // Start just after an observed scan, so the one-second backup cannot
+      // accidentally satisfy the sub-700ms event-driven regression assertion.
+      await eventually(async () => {
+        const status = await contentStatus(tabId);
+        return status.lastForeground?.focused === true && status.lastForeground.ageMs < 120;
+      }, "Could not align CSS activation after a foreground scan", 3000);
+    };
+    const revealCssSkip = async (fixture, effect) => {
+      await waitForFreshForegroundScan(fixture.tabId);
+      const activation = await fixture.page.evaluate(async kind => {
+        const button = document.querySelector(".fixture-effect-skip");
+        // Commit the hidden style before changing it. The first mutation scan
+        // must see opacity 0; only a real CSS lifecycle event can follow it.
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        window.fixtureEffectStartedAt = performance.now();
+        button.classList.add(kind === "transition" ? "fixture-transition-visible" : "fixture-animation-visible");
+        return { at: window.fixtureEffectStartedAt, opacity: Number(getComputedStyle(button).opacity) };
+      }, effect);
+      assert.equal(activation.opacity, 0, "CSS activation did not start from opacity zero");
+      await eventually(() => fixture.page.evaluate(() => window.fixtureClicks.some(item => item.trusted)),
+        "CSS-visible skip button was not clicked using trusted input", 1800);
+      const result = await fixture.page.evaluate(() => ({ clicks: window.fixtureClicks, events: window.fixtureCssEvents }));
+      const click = result.clicks.find(item => item.trusted);
+      assert.ok(click.at - activation.at < 700,
+        `${effect} skip waited ${Math.round(click.at - activation.at)}ms; expected detection before the 1-second backup`);
+      assert.ok(click.opacity > 0 && click.opacity <= 1);
+      assert.ok(result.events.some(event => event.type === effect + "start" && event.trusted),
+        "A browser-generated CSS start event was not observed");
+      assert.equal(scenario.loads.get(fixture.id), 2, "CSS detection exceeded its naturally exhausted reload budget");
+      return result;
+    };
 
     let popup = await openPopup();
     await eventually(async () => (await popup.locator("#version").textContent()).includes(expectedVersion),
@@ -282,6 +369,24 @@ async function eventually(check, description, timeout = 7000) {
     await go(page, "watch?v=fixture-one");
     await waitForSkip(page, "fixture-one", 1);
     record("popup saves and reopens limit 1, and the real worker reloads exactly once");
+
+    let cssFixture = await prepareCssSkip("fixture-css-transition");
+    await revealCssSkip(cssFixture, "transition");
+    record("a real 300ms opacity transition triggers trusted skip before the one-second backup");
+
+    cssFixture = await prepareCssSkip("fixture-css-animation");
+    await cssFixture.page.evaluate(() => {
+      const progress = document.createElement("div");
+      progress.className = "fixture-progress";
+      document.querySelector(".html5-video-player").append(progress);
+    });
+    await sleep(1250);
+    assert.equal(await cssFixture.page.evaluate(() => window.fixtureClicks.length), 0);
+    assert.equal((await messages()).filter(item => item.type === "skip-ad").length, 0);
+    assert.equal(scenario.loads.get(cssFixture.id), 2);
+    record("unrelated progress animation never clicks an opacity-zero skip button");
+    await revealCssSkip(cssFixture, "animation");
+    record("a real CSS opacity animation triggers trusted skip before the one-second backup");
 
     page = await reset({ reloadsBeforeButton: 5 });
     await setLimitThroughPopup(5);
@@ -450,8 +555,9 @@ async function eventually(check, description, timeout = 7000) {
       await page.evaluate(() => document.querySelector(".html5-video-player").classList.remove("ad-showing"));
       await eventually(async () => {
         const records = await worker.evaluate(() => chrome.storage.session.get(null));
-        const running = await worker.evaluate(id => jobs.has(id), tabId);
-        return !running && !records["ad-reload:" + tabId];
+        const status = await contentStatus(tabId);
+        const completed = status.lastResult?.operation === "reload-ad" && status.lastResult.ok === false;
+        return completed && !records["ad-reload:" + tabId];
       }, "Cancelled undispatched reload did not refund its committed reservation", 7000);
       assert.equal(scenario.loads.get("fixture-refund"), 1);
       await page.evaluate(() => document.querySelector(".html5-video-player").classList.add("ad-showing"));

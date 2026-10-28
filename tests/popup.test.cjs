@@ -27,10 +27,16 @@ function harness(options = {}) {
   const elements = new Map(), messages = [], queries = [], clipboard = [], writes = [], timers = new Map();
   let nextTimer = 0;
   const document = { activeElement: null, getElementById: id => elements.get(id) };
+  const tags = { enabled: "INPUT", state: "SPAN", "max-reloads": "INPUT", "reload-state": "SPAN",
+    error: "P", version: "P", "diagnostic-check": "BUTTON", "diagnostic-copy": "BUTTON",
+    "diagnostic-status": "P", "diagnostic-result": "DIV", "diagnostic-report": "TEXTAREA",
+    "diagnostic-copy-status": "P" };
   for (const id of ["enabled", "state", "max-reloads", "reload-state", "error", "version", "diagnostic-check",
     "diagnostic-copy", "diagnostic-status", "diagnostic-result", "diagnostic-report", "diagnostic-copy-status"]) {
+    if (options.missingElement === id) continue;
     const listeners = new Map(), attributes = new Map();
-    const element = { id, textContent: "", value: "", checked: false, disabled: id === "diagnostic-copy",
+    const element = { id, tagName: options.wrongElement === id ? "DIV" : tags[id],
+      textContent: "", value: "", checked: false, disabled: id === "diagnostic-copy",
       hidden: id === "diagnostic-result", dataset: {}, selected: false,
       setAttribute: (key, value) => attributes.set(key, value), removeAttribute: key => attributes.delete(key),
       getAttribute: key => attributes.get(key),
@@ -76,6 +82,11 @@ function harness(options = {}) {
     expire: () => { for (const timer of [...timers.values()]) timer(); }
   };
 }
+
+test("fixed popup controls must exist with their expected element type", () => {
+  assert.throws(() => harness({ missingElement: "enabled" }), /Required popup element/);
+  assert.throws(() => harness({ wrongElement: "diagnostic-report" }), /Required popup element/);
+});
 
 test("diagnostics runs only on request and sends no reload or skip action", async () => {
   const h = harness();
