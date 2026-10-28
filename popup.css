@@ -36,6 +36,19 @@ input:checked { background: #4263eb; }
 input:checked::before { transform: translateX(18px); }
 input:disabled { cursor: wait; opacity: .6; }
 input:focus-visible { outline: 3px solid #bac8ff; outline-offset: 4px; }
+.reload-setting {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 12px;
+  margin-top: 14px; padding: 16px 18px; border: 1px solid #e9edf5; border-radius: 14px;
+}
+.reload-label { color: #253047; font-size: 13px; font-weight: 600; letter-spacing: -.25px; }
+.reload-control { display: flex; align-items: center; gap: 6px; color: #667389; font-size: 12px; }
+input[type="number"] {
+  width: 64px; padding: 7px 5px 7px 9px; border: 1px solid #dce3ee; border-radius: 8px;
+  background: #fff; color: #253047; font: inherit; font-size: 14px; text-align: center;
+}
+input[type="number"][aria-invalid="true"] { border-color: #c53045; }
+.reload-hint { grid-column: 1 / -1; margin: 0; color: #6c788b; font-size: 11px; line-height: 1.6; letter-spacing: -.2px; }
+.reload-state { grid-column: 1 / -1; color: #4263eb; font-size: 10px; line-height: 1.4; }
 .note { display: flex; align-items: flex-start; gap: 7px; margin: 18px 0 0; color: #6c788b; font-size: 11px; line-height: 1.6; letter-spacing: -.2px; }
 .note svg { flex-shrink: 0; margin-top: 1px; }
 .permission { margin-top: 12px; color: #6c788b; font-size: 11px; line-height: 1.7; }

@@ -5,14 +5,14 @@ Git push → Chrome 웹 스토어 자동 제출 설정
 GitHub Pages 개인정보 페이지는 별도 Pages 워크플로에서 갱신합니다.
 Google 심사 시간은 push 시점과 별개입니다.
 
-버전 1.0.1의 현재 수정 사항
+적용 소스: 버전 1.0.2
 
-1.0.0의 실제 광고 테스트에서는 JavaScript 클릭이 무시됐습니다. 1.0.1은
-현재 보고 있는 Chrome 창의 활성 YouTube /watch 영상 탭에서 표시되고
-활성화된 건너뛰기 버튼에 Chrome Debugger Input으로 마우스 입력을 보내도록
-수정했습니다. 실제 광고 자동 건너뛰기 1건과 최종 파일의 통합 검증을 기록한
-뒤 기존 1.0.0 검토를 취소하고 1.0.1을 재심사 제출했습니다. 현재 검토 대기 중이며
-실제 증거 범위는 store/verification.txt, 접수 상태는 store/submission-status.json에 있습니다.
+현재 보고 있는 Chrome 창의 활성 YouTube /watch 영상 탭에서 광고를 감지하면
+설정한 최대 횟수까지 최소 3초 간격으로 새로고침합니다. 기본 3회이며 팝업에서
+1~10회로 설정할 수 있습니다. 한도에 도달한 뒤 광고가 계속되면 표시되고
+사용 가능한 건너뛰기 버튼에 Chrome Debugger Input을 보냅니다. 새로고침은
+광고를 없애거나 본영상 전환을 보장하지 않습니다. 실제 검증 범위는
+store/verification.txt, 현재 제출·게시 상태는 store/submission-status.json에 기록합니다.
 
 debugger 권한은 페이지 디버거 접근과 모든 웹사이트의 데이터 읽기·변경
 경고를 표시할 수 있는 넓은 권한입니다. 코드의 YouTube 영상 탭 제한,
@@ -24,7 +24,7 @@ API는 스토어 소개, 권한 사유와 개인정보 공개 항목을 자동�
 기존 1.0.0의 취소·교체는 Aside CLI의 실제 대시보드 화면에서 완료했습니다.
 현재 워크플로는 이전 심사를 취소하지 않습니다. API가 연결돼 있다면
 확장 프로그램 코드를 main에 push할 때 자동 제출이 실행될 수 있으므로
-1.0.1의 실제 검증과 대시보드 공개 내용 갱신을 먼저 완료합니다.
+현재 버전의 실제 검증과 대시보드 공개 내용 갱신을 먼저 완료합니다.
 .verification/ 검증 산출물, 브라우저 프로필, 개인 계정 정보 및 비밀정보는
 공개 저장소·배포 패키지·워크플로 artifact에 넣지 않습니다.
 
@@ -41,7 +41,66 @@ Private 또는 Unlisted 등 원하는 배포 범위를 정한 뒤 대시보드�
 공식 API 설정 안내: https://developer.chrome.com/docs/webstore/using-api
 개인정보 입력 안내: https://developer.chrome.com/docs/webstore/cws-dashboard-privacy
 
-2. Google OAuth 연결 준비
+2. 권장 연결: 서비스 계정 + GitHub OIDC / Workload Identity Federation
+
+장기 서비스 계정 JSON 키를 만들거나 GitHub에 저장하지 않습니다. GitHub의
+main 브랜치 실행이 OIDC로 전용 서비스 계정을 가장하여 단기 access token을
+받고, 배포 스크립트에는 실행 중 CWS_ACCESS_TOKEN으로만 전달합니다.
+
+전용 Google Cloud 프로젝트를 사용합니다. 다른 제품의 운영 프로젝트나 기존
+서비스 계정 권한을 이 확장의 배포에 재사용하지 않습니다. Cloud 설정이 완료되면
+아래 대상 값이 실제 리소스와 일치하는지 확인합니다. 값 자체는 비밀정보가 아닙니다.
+
+  프로젝트: knj-youtube-auto-skip-cws
+  프로젝트 번호: 201518632423
+  WIF provider:
+    projects/201518632423/locations/global/workloadIdentityPools/github-actions/providers/github-main
+  서비스 계정:
+    github-cws-publisher@knj-youtube-auto-skip-cws.iam.gserviceaccount.com
+  GitHub 저장소: knj-arch/youtube-auto-skip
+  GitHub repository_id: 1415784275
+  GitHub repository_owner_id: 326460992
+
+Chrome Web Store API, IAM Service Account Credentials API, Security Token Service
+API를 필요한 프로젝트에서 사용 설정합니다. issuer는
+https://token.actions.githubusercontent.com 이고, provider의 attribute mapping은
+최소 다음 필드를 포함합니다.
+
+  google.subject=assertion.sub
+  attribute.repository_id=assertion.repository_id
+  attribute.repository_owner_id=assertion.repository_owner_id
+  attribute.ref=assertion.ref
+
+provider attribute condition은 저장소의 변경되지 않는 숫자 ID, 소유자 ID 및
+main 브랜치를 함께 제한합니다. 예:
+
+  assertion.repository_id == '1415784275' && assertion.repository_owner_id == '326460992' && assertion.ref == 'refs/heads/main'
+
+서비스 계정의 roles/iam.workloadIdentityUser 바인딩은 다음 repository_id의
+principalSet만 허용합니다. 위 provider 조건이 소유자와 브랜치도 제한합니다.
+
+  principalSet://iam.googleapis.com/projects/201518632423/locations/global/workloadIdentityPools/github-actions/attribute.repository_id/1415784275
+
+이 서비스 계정 이메일을 Chrome 웹 스토어 개발자 대시보드 Account의 서비스
+계정 항목에 별도로 연결합니다. Cloud IAM 설정만으로 스토어 게시자 권한이
+생기지는 않습니다. 공식 안내의 게시자당 연결 가능한 서비스 계정 제한도 확인합니다.
+
+워크플로는 submit job에만 contents:read, id-token:write를 부여합니다.
+google-github-actions/auth@v3는 service account impersonation으로
+token_format=access_token, scope=https://www.googleapis.com/auth/chromewebstore를
+사용하며 create_credentials_file=false, export_environment_variables=false입니다.
+자격증명 JSON 파일을 생성하거나 artifact에 넣지 않습니다. auth 액션은 Node 24
+런타임을 사용하므로 이를 지원하는 GitHub-hosted runner 또는 최신 self-hosted
+runner가 필요합니다. 저장소 스크립트의 Node 22 설정과 액션 자체 런타임은 별개입니다.
+
+공식 서비스 계정 안내: https://developer.chrome.com/docs/webstore/service-accounts
+공식 auth 액션: https://github.com/google-github-actions/auth/tree/v3
+OIDC 구성·숫자 ID 제한: https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines
+
+3. 기존 연결 유지: Google OAuth refresh token
+
+WIF 변수 두 개를 모두 비워 둔 경우에만 아래 OAuth 방식으로 실행합니다.
+WIF를 구성했다면 OAuth Secrets가 존재하더라도 인증 실패를 OAuth로 우회하지 않습니다.
 
 Google Cloud 프로젝트에서 Chrome Web Store API를 사용 설정합니다.
 Google Auth Platform에서 OAuth 동의 화면을 구성하고 External로 본인 계정을
@@ -64,28 +123,40 @@ OAuth 동의 화면이 External + Testing이면 refresh token은 7일 후 만료
 OAuth 공식 안내: https://developers.google.com/identity/protocols/oauth2#expiration
 Playground: https://developers.google.com/oauthplayground
 
-3. GitHub 저장소 설정
+4. GitHub 저장소 설정
 
 저장소 Settings → Secrets and variables → Actions에 아래 값을 추가합니다.
 
-Secrets:
+공통 Variables:
+  CWS_PUBLISHER_ID    스토어 대시보드 Publisher → Settings의 Publisher ID
+  CWS_EXTENSION_ID    만든 항목의 32자리 확장 프로그램 ID
+
+WIF 방식의 추가 Variables:
+  CWS_WORKLOAD_IDENTITY_PROVIDER    위 provider의 전체 리소스 이름
+  CWS_SERVICE_ACCOUNT_EMAIL        스토어 게시자에 연결한 서비스 계정 이메일
+
+WIF 방식에는 아래 OAuth Secrets 세 개가 필요하지 않습니다. CWS_ACCESS_TOKEN은
+auth 액션의 access_token 출력을 해당 실행의 환경변수로 전달하며, 고정된
+GitHub Secret이나 Variable로 저장하지 않습니다. 단기 토큰은 일반 로그·오류에서
+가려지며 GitHub의 add-mask 명령으로도 마스킹합니다.
+
+OAuth fallback 방식에만 필요한 Secrets:
   CWS_CLIENT_ID       OAuth Client ID
   CWS_CLIENT_SECRET   OAuth Client secret
   CWS_REFRESH_TOKEN   스토어 계정으로 받은 refresh token
 
-Variables:
-  CWS_PUBLISHER_ID    스토어 대시보드 Publisher → Settings의 Publisher ID
-  CWS_EXTENSION_ID    만든 항목의 32자리 확장 프로그램 ID
-
 두 Variables가 없으면 ZIP만 생성하고 스토어 제출을 건너뜁니다.
-Variables를 넣고 Secrets를 빠뜨리면 누락된 키 이름을 표시하며 제출 작업이 실패합니다.
+공통 Variables가 있으면 WIF 또는 OAuth 인증을 검사합니다. WIF 변수 중 하나만
+설정한 경우에는 명확한 오류로 중단합니다. WIF 변수 두 개가 모두 있지만 단기
+토큰을 받지 못한 경우에도 OAuth로 우회하지 않습니다. OAuth 모드에서 Secrets가
+빠졌으면 누락된 키 이름만 표시하며 제출 작업이 실패합니다.
 
-4. 변경을 push하기
+5. 변경을 push하기
 
 기존처럼 코드를 고치고 main에 push합니다. Actions의
 Extension package and store submission에서 ZIP과 제출 결과를 확인하세요.
 Actions 실행본에서만 manifest.version에 실행 번호가 붙습니다.
-예: 소스 1.0.1 + workflow run number 17 → 스토어 버전 1.0.1.17
+예: 소스 1.0.2 + workflow run number 17 → 스토어 버전 1.0.2.17
 로컬 소스 manifest와 Git 기록은 자동 버전 처리로 바뀌지 않습니다.
 확장 코드/아이콘/패키징/배포 스크립트 변경이 이 워크플로를 실행합니다.
 README나 개인정보 페이지 변경은 스토어 버전을 새로 제출하지 않습니다.
@@ -94,7 +165,7 @@ README나 개인정보 페이지 변경은 스토어 버전을 새로 제출하�
 실행 번호가 65535에 도달하기 전 기본 버전을 올리고 새 워크플로 이름으로
 실행 번호를 다시 시작해야 합니다(파일 이름 변경 필요).
 
-5. 심사와 실패 재시도
+6. 심사와 실패 재시도
 
 업로드의 비동기 검증은 최대 5분까지 확인하고 성공한 경우에만 심사 제출합니다.
 다른 버전이 이미 심사 중/게시 대기면 그 결과를 기다리고 실패한 실행을 재실행합니다.
@@ -107,6 +178,10 @@ receipt artifact를 복원하여 심사 제출만 재시도합니다(30일 보�
 GitHub의 동시 실행 설정은 진행 중인 업로드를 중단하지 않지만 빠르게 연속된
 push는 대기 실행이 최신 실행으로 대체될 수 있으므로 최신 코드가 제출됩니다.
 invalid_grant 오류는 OAuth 상태를 확인하고 refresh token을 다시 받아 교체합니다.
+WIF 인증 오류는 provider의 issuer·숫자 저장소 ID·owner ID·main 조건,
+서비스 계정의 workloadIdentityUser 바인딩과 스토어 대시보드의 서비스 계정
+연결을 각각 확인합니다. 새 IAM 설정의 전파에는 시간이 걸릴 수 있습니다.
+만료된 단기 토큰은 저장해서 재사용하지 않고 새 Actions 실행에서 다시 발급합니다.
 공개 범위 변경이나 스토어 자료 누락은 대시보드에서 수정해야 합니다.
 
 업로드 API: https://developer.chrome.com/docs/webstore/api/reference/rest/v2/media/upload

@@ -2,9 +2,12 @@
 
 const OPERATION_TIMEOUT_MS = 2000;
 const ATTEMPT_COOLDOWN_MS = 1500;
+const RELOAD_INTERVAL_MS = 3000;
+const RESUME_LIFETIME_MS = 60000;
 const jobs = new Map();
 const blockedDocuments = new Map();
 const lastAttempts = new Map();
+const reloadStateQueues = new Map();
 let automationPaused = false;
 
 // This fixed expression returns only the current skip-button coordinates.
@@ -66,8 +69,16 @@ function isWatchUrl(value) {
   return isYoutubeUrl(value) && new URL(value).pathname === "/watch";
 }
 
+function watchVideoId(value) {
+  if (!isWatchUrl(value)) return null;
+  const ids = new URL(value).searchParams.getAll("v");
+  return ids.length === 1 && /^[A-Za-z0-9_-]{1,128}$/.test(ids[0]) ? ids[0] : null;
+}
+
 function permittedRequest(message, sender) {
-  return message?.type === "skip-ad" && isWatchUrl(message.url) &&
+  return ["skip-ad", "reload-ad", "ad-reload-state", "ad-resume-complete"].includes(message?.type) &&
+    isWatchUrl(message.url) &&
+    (message.type === "skip-ad" || watchVideoId(message.url) !== null) &&
     sender.id === chrome.runtime.id && sender.frameId === 0 &&
     typeof sender.documentId === "string" && sender.documentId.length > 0 &&
     sender.documentId.length <= 128 &&
@@ -136,12 +147,14 @@ async function cleanup(job) {
   return job.cleanupPromise;
 }
 
-async function checkDocumentAndForeground(job) {
+async function checkDocumentAndForeground(job, requireAd = false) {
   const [settings, tab, windowInfo, confirmation] = await step(job, () => Promise.all([
-    chrome.storage.local.get({ enabled: true }),
+    chrome.storage.local.get({ enabled: true, maxReloads: 3 }),
     chrome.tabs.get(job.tabId),
     chrome.windows.get(job.windowId),
-    chrome.tabs.sendMessage(job.tabId, { type: "confirm-skip-document", url: job.url },
+    chrome.tabs.sendMessage(job.tabId, {
+      type: "confirm-skip-document", url: job.url, ...(requireAd ? { requireAd: true } : {})
+    },
       { documentId: job.documentId, frameId: 0 })
   ]));
   if (settings.enabled === false) throw new StopOperation("disabled");
@@ -152,6 +165,171 @@ async function checkDocumentAndForeground(job) {
   if ((tab.url !== undefined && tab.url !== job.url) ||
       (tab.pendingUrl !== undefined && tab.pendingUrl !== job.url) ||
       !confirmation?.ok || confirmation.url !== job.url) throw new StopOperation("document-changed");
+  if (requireAd && confirmation.adShowing !== true) throw new StopOperation("ad-not-showing");
+  return settings;
+}
+
+function maxReloads(value) {
+  return typeof value === "number" && Number.isFinite(value) ?
+    Math.min(10, Math.max(1, Math.trunc(value))) : 3;
+}
+
+function reloadStateKey(tabId) {
+  return "ad-reload:" + tabId;
+}
+
+function withReloadState(tabId, action) {
+  // Keep each tab's read/consume/write operations ordered, including tab removal.
+  const previous = reloadStateQueues.get(tabId) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(action);
+  reloadStateQueues.set(tabId, operation);
+  const finish = () => {
+    if (reloadStateQueues.get(tabId) === operation) reloadStateQueues.delete(tabId);
+  };
+  operation.then(finish, finish);
+  return operation;
+}
+
+async function readReloadRecord(tabId) {
+  const key = reloadStateKey(tabId);
+  const result = await chrome.storage.session.get(key);
+  const record = result[key];
+  if (record === undefined) return undefined;
+  if (!record || typeof record !== "object" || typeof record.videoId !== "string" ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(record.videoId) ||
+      !Number.isInteger(record.reloadCount) || record.reloadCount < 1 ||
+      !Number.isFinite(record.lastReloadAt) || record.lastReloadAt < 0 ||
+      typeof record.sourceDocumentId !== "string" || !record.sourceDocumentId ||
+      record.sourceDocumentId.length > 128) throw new StopOperation("reload-state-unavailable");
+  return record;
+}
+
+function retryAfter(record) {
+  return record ? Math.max(0, RELOAD_INTERVAL_MS - (Date.now() - record.lastReloadAt)) : 0;
+}
+
+function validResume(record) {
+  return record && Number.isFinite(record.resumeTime) && record.resumeTime > 0 &&
+    Number.isFinite(record.resumeExpiresAt) && Date.now() < record.resumeExpiresAt;
+}
+
+function withoutResume(record) {
+  const cleaned = { ...record };
+  delete cleaned.resumeTime;
+  delete cleaned.resumeExpiresAt;
+  delete cleaned.resumeDeliveredTo;
+  return cleaned;
+}
+
+async function reloadState(message, sender) {
+  try {
+    return await withReloadState(sender.tab.id, async () => {
+      const record = await readReloadRecord(sender.tab.id);
+      if (record?.videoId !== watchVideoId(message.url)) {
+        return { ok: true, reloaded: false, reloadCount: 0, retryAfterMs: 0 };
+      }
+      const result = { ok: true, reloaded: true, reloadCount: record.reloadCount, retryAfterMs: retryAfter(record) };
+      if (record.resumeTime === undefined && record.resumeExpiresAt === undefined) return result;
+      if (validResume(record) && (record.sourceDocumentId === sender.documentId ||
+          record.resumeDeliveredTo === sender.documentId)) return result;
+      try {
+        if (validResume(record)) {
+          // Deliver once per document, but retain the position through ad reloads.
+          const delivered = { ...record, resumeDeliveredTo: sender.documentId };
+          await chrome.storage.session.set({ [reloadStateKey(sender.tab.id)]: delivered });
+          if (validResume(record)) result.resumeTime = record.resumeTime;
+          else await chrome.storage.session.set({ [reloadStateKey(sender.tab.id)]: withoutResume(delivered) });
+        } else {
+          await chrome.storage.session.set({ [reloadStateKey(sender.tab.id)]: withoutResume(record) });
+        }
+      } catch {
+        // Keep the reload guard and skip best-effort restoration on write failure.
+      }
+      return result;
+    });
+  } catch {
+    return { ok: false, reason: "reload-state-unavailable" };
+  }
+}
+
+async function resumeComplete(message, sender) {
+  try {
+    return await withReloadState(sender.tab.id, async () => {
+      const record = await readReloadRecord(sender.tab.id);
+      if (record?.videoId !== watchVideoId(message.url) || record.resumeDeliveredTo !== sender.documentId) {
+        return { ok: true, cleared: false };
+      }
+      await chrome.storage.session.set({ [reloadStateKey(sender.tab.id)]: withoutResume(record) });
+      return { ok: true, cleared: true };
+    });
+  } catch {
+    return { ok: false, reason: "reload-state-unavailable" };
+  }
+}
+
+async function discardResume(job) {
+  try {
+    await withReloadState(job.tabId, async () => {
+      const record = await readReloadRecord(job.tabId);
+      if (record?.videoId !== job.videoId || record.sourceDocumentId !== job.documentId ||
+          (record.resumeTime === undefined && record.resumeExpiresAt === undefined)) return;
+      await chrome.storage.session.set({ [reloadStateKey(job.tabId)]: withoutResume(record) });
+    });
+  } catch {
+    // Even if cleanup fails, reloadState never returns an expired position.
+  }
+}
+
+async function reloadAd(job, resumeTime) {
+  const timer = setTimeout(() => stop(job, "timeout"), OPERATION_TIMEOUT_MS);
+  try {
+    const settings = await checkDocumentAndForeground(job, true);
+    const reservation = await step(job, () => withReloadState(job.tabId, async () => {
+      let record;
+      try {
+        record = await readReloadRecord(job.tabId);
+        ensureRunning(job);
+        if (record?.videoId !== job.videoId) record = undefined;
+        const count = record?.reloadCount || 0;
+        job.reloadCount = count;
+        if (count >= maxReloads(settings.maxReloads)) {
+          return { ok: false, reason: "reload-limit", reloadCount: count };
+        }
+        const retryAfterMs = retryAfter(record);
+        if (retryAfterMs > 0) return { ok: false, reason: "retry-later", retryAfterMs, reloadCount: count };
+        const next = { videoId: job.videoId, sourceDocumentId: job.documentId,
+          reloadCount: count + 1, lastReloadAt: Date.now() };
+        const position = Number.isFinite(resumeTime) && resumeTime > 0 ? resumeTime :
+          validResume(record) ? record.resumeTime : undefined;
+        if (position !== undefined) {
+          next.resumeTime = position;
+          next.resumeExpiresAt = Date.now() + RESUME_LIFETIME_MS;
+        }
+        // Persist before navigation so a new worker/document cannot reload again.
+        await chrome.storage.session.set({ [reloadStateKey(job.tabId)]: next });
+        job.reloadCount = next.reloadCount;
+      } catch (error) {
+        if (error instanceof StopOperation) throw error;
+        throw new StopOperation("reload-state-unavailable");
+      }
+      return { ok: true };
+    }));
+    if (!reservation.ok) return reservation;
+    // Saving the guard is asynchronous: verify the live ad, preference and focus again.
+    const latestSettings = await checkDocumentAndForeground(job, true);
+    if (job.reloadCount > maxReloads(latestSettings.maxReloads)) throw new StopOperation("reload-limit");
+    ensureRunning(job);
+    job.reloading = true;
+    await chrome.tabs.reload(job.tabId);
+    return { ok: true, reloading: true, reloadCount: job.reloadCount };
+  } catch (error) {
+    await discardResume(job);
+    return { ok: false, reason: error instanceof StopOperation ? error.reason : "failed",
+      ...(Number.isInteger(job.reloadCount) ? { reloadCount: job.reloadCount } : {}) };
+  } finally {
+    clearTimeout(timer);
+    if (jobs.get(job.tabId) === job) jobs.delete(job.tabId);
+  }
 }
 
 async function checkFrame(job) {
@@ -224,21 +402,32 @@ async function skip(job) {
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   if (!permittedRequest(message, sender)) return false;
+  if (message.type === "ad-reload-state") {
+    reloadState(message, sender).then(respond, () => respond({ ok: false, reason: "reload-state-unavailable" }));
+    return true;
+  }
+  if (message.type === "ad-resume-complete") {
+    resumeComplete(message, sender).then(respond, () => respond({ ok: false, reason: "reload-state-unavailable" }));
+    return true;
+  }
   const tabId = sender.tab.id;
   const now = Date.now();
   if (automationPaused || blockedDocuments.get(tabId) === sender.documentId) {
     respond({ ok: false, reason: "disabled" });
     return false;
   }
-  if (jobs.has(tabId) || now - (lastAttempts.get(tabId) ?? -Infinity) < ATTEMPT_COOLDOWN_MS) {
+  if (jobs.has(tabId) || (message.type === "skip-ad" &&
+      now - (lastAttempts.get(tabId) ?? -Infinity) < ATTEMPT_COOLDOWN_MS)) {
     respond({ ok: false, reason: "busy" });
     return false;
   }
-  const job = { tabId, windowId: sender.tab.windowId, documentId: sender.documentId,
+  const job = { tabId, kind: message.type, videoId: watchVideoId(message.url),
+    windowId: sender.tab.windowId, documentId: sender.documentId,
     url: message.url, deadline: now + OPERATION_TIMEOUT_MS, attached: false, pressed: false };
   lastAttempts.set(tabId, now);
   jobs.set(tabId, job);
-  skip(job).then(respond, () => respond({ ok: false, reason: "failed" }));
+  const operation = message.type === "reload-ad" ? reloadAd(job, message.resumeTime) : skip(job);
+  operation.then(respond, () => respond({ ok: false, reason: "failed" }));
   return true;
 });
 
@@ -279,7 +468,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   const job = jobs.get(tabId);
-  if (job && (change.status === "loading" || (change.url && change.url !== job.url))) {
+  const ownReload = job?.kind === "reload-ad" && job.reloading &&
+    (!change.url || change.url === job.url);
+  if (job && ((!ownReload && change.status === "loading") || (change.url && change.url !== job.url))) {
     stop(job, "document-changed");
   }
 });
@@ -298,4 +489,5 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   if (job) stop(job, "document-changed");
   blockedDocuments.delete(tabId);
   lastAttempts.delete(tabId);
+  void withReloadState(tabId, () => chrome.storage.session.remove(reloadStateKey(tabId))).catch(() => {});
 });

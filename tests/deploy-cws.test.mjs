@@ -15,6 +15,16 @@ const env = {
 };
 const name = `publishers/${env.CWS_PUBLISHER_ID}/items/${env.CWS_EXTENSION_ID}`;
 const token = { access_token: 'test-access-token-42' };
+const accessTokenEnv = {
+  CWS_ACCESS_TOKEN: 'test-wif-access-token-42',
+  CWS_PUBLISHER_ID: env.CWS_PUBLISHER_ID, CWS_EXTENSION_ID: env.CWS_EXTENSION_ID,
+  GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: env.GITHUB_RUN_ID, GITHUB_SHA: env.GITHUB_SHA,
+};
+const wifEnv = {
+  ...accessTokenEnv,
+  CWS_WORKLOAD_IDENTITY_PROVIDER: 'projects/123456789/locations/global/workloadIdentityPools/github/providers/main',
+  CWS_SERVICE_ACCOUNT_EMAIL: 'cws-publisher@youtube-test-project.iam.gserviceaccount.com',
+};
 const packageBytes = new Uint8Array([80, 75, 3, 4]);
 const version = '1.0.0.17';
 
@@ -152,4 +162,108 @@ test('HTTP errors redact credentials and access tokens', async () => {
   assert.ok(failure?.includes('[redacted]'));
   for (const secret of [env.CWS_CLIENT_SECRET, env.CWS_REFRESH_TOKEN, token.access_token]) assert.ok(!failure.includes(secret));
   assert.equal(r.requests.length, 3);
+});
+
+test('a WIF access token uploads and submits without OAuth client secrets or a refresh request', async () => {
+  const r = runner([{}, { uploadState: 'SUCCEEDED', crxVersion: version }, { state: 'PENDING_REVIEW' }], { env: wifEnv });
+  assert.equal((await r.run()).outcome, 'submitted');
+  assert.equal(r.requests.length, 3);
+  assert.ok(r.requests.every(request => request.url.startsWith('https://chromewebstore.googleapis.com/')));
+  assert.ok(r.requests.every(request => request.options.headers.Authorization === `Bearer ${wifEnv.CWS_ACCESS_TOKEN}`));
+  assert.equal(r.logs[0], `::add-mask::${wifEnv.CWS_ACCESS_TOKEN}`);
+  assert.deepEqual(r.receipts[0], { name, version, runId: '123', commit: 'abc123' });
+});
+
+test('a caller-supplied access token takes precedence over available OAuth credentials', async () => {
+  const r = runner([{}, { uploadState: 'SUCCEEDED' }, { state: 'PENDING_REVIEW' }],
+    { env: { ...env, CWS_ACCESS_TOKEN: accessTokenEnv.CWS_ACCESS_TOKEN } });
+  await r.run();
+  assert.equal(r.requests.length, 3);
+  assert.ok(r.requests.every(request => request.url !== 'https://oauth2.googleapis.com/token'));
+});
+
+test('WIF HTTP errors redact the token before surfacing a diagnostic', async () => {
+  const r = runner([{ status: 401, body: { error: { status: 'UNAUTHENTICATED', message: `expired ${wifEnv.CWS_ACCESS_TOKEN}` } } }],
+    { env: wifEnv });
+  let failure;
+  try { await r.run(); } catch (error) { failure = error.message; }
+  assert.ok(failure?.includes('[redacted]'));
+  assert.ok(!failure.includes(wifEnv.CWS_ACCESS_TOKEN));
+  assert.equal(r.requests.length, 1);
+});
+
+test('normal warnings and unexpected API states never log or throw a supplied access token', async () => {
+  const normalEnv = { ...accessTokenEnv, GITHUB_ACTIONS: 'false' };
+  const warning = runner([{}, { uploadState: 'SUCCEEDED' }, { state: 'PENDING_REVIEW',
+    warningInfo: { warnings: [{ reason: 'TEST', description: 'x'.repeat(1460) + normalEnv.CWS_ACCESS_TOKEN }] } }],
+  { env: normalEnv });
+  await warning.run();
+  assert.ok(warning.logs.every(line => !line.includes(normalEnv.CWS_ACCESS_TOKEN)));
+  assert.ok(warning.logs.some(line => line.includes('[redacted]')));
+  for (const responses of [
+    [{}, { uploadState: normalEnv.CWS_ACCESS_TOKEN }],
+    [{}, { uploadState: 'SUCCEEDED' }, { state: normalEnv.CWS_ACCESS_TOKEN }],
+  ]) {
+    const r = runner(responses, { env: normalEnv });
+    await assert.rejects(r.run(), error => !error.message.includes(normalEnv.CWS_ACCESS_TOKEN) && error.message.includes('[redacted]'));
+  }
+});
+
+test('GitHub masking escapes workflow-command characters in supplied tokens', async () => {
+  const supplied = 'test-access%token-42';
+  const r = runner([{ publishedItemRevisionStatus: { state: 'PUBLISHED_TO_TESTERS', distributionChannels: [{ crxVersion: version }] } }],
+    { env: { ...accessTokenEnv, CWS_ACCESS_TOKEN: supplied } });
+  assert.equal((await r.run()).outcome, 'skipped');
+  assert.equal(r.logs[0], '::add-mask::test-access%25token-42');
+  assert.ok(r.logs.every(line => !line.includes(supplied)));
+});
+
+test('partial WIF configuration cannot fall back to OAuth even when its secrets exist', async () => {
+  for (const additions of [
+    { CWS_WORKLOAD_IDENTITY_PROVIDER: wifEnv.CWS_WORKLOAD_IDENTITY_PROVIDER },
+    { CWS_SERVICE_ACCOUNT_EMAIL: wifEnv.CWS_SERVICE_ACCOUNT_EMAIL },
+  ]) {
+    const r = runner([], { env: { ...env, ...additions } });
+    await assert.rejects(r.run(), /Incomplete WIF configuration/);
+    assert.equal(r.requests.length, 0);
+  }
+  const r = runner([], { env: { ...env, ...wifEnv, CWS_ACCESS_TOKEN: '' } });
+  await assert.rejects(r.run(), /CWS_ACCESS_TOKEN.*missing.*WIF/);
+  assert.equal(r.requests.length, 0);
+});
+
+test('malformed WIF metadata and access tokens fail before network activity', async () => {
+  for (const additions of [
+    { CWS_WORKLOAD_IDENTITY_PROVIDER: 'projects/not-a-number/providers/main' },
+    { CWS_SERVICE_ACCOUNT_EMAIL: 'person@example.com' },
+    { CWS_ACCESS_TOKEN: 'token with whitespace' },
+  ]) {
+    const r = runner([], { env: { ...wifEnv, ...additions } });
+    await assert.rejects(r.run(), /Invalid CWS_/);
+    assert.equal(r.requests.length, 0);
+  }
+});
+
+test('missing store identifiers and missing authentication both fail before network activity', async () => {
+  for (const key of ['CWS_PUBLISHER_ID', 'CWS_EXTENSION_ID']) {
+    const r = runner([], { env: { ...accessTokenEnv, [key]: '' } });
+    await assert.rejects(r.run(), new RegExp(key));
+    assert.equal(r.requests.length, 0);
+  }
+  const r = runner([], { env: { CWS_PUBLISHER_ID: env.CWS_PUBLISHER_ID, CWS_EXTENSION_ID: env.CWS_EXTENSION_ID } });
+  await assert.rejects(r.run(), /CWS_CLIENT_ID.*CWS_CLIENT_SECRET.*CWS_REFRESH_TOKEN/);
+  assert.equal(r.requests.length, 0);
+});
+
+test('direct-token deployments preserve review protection and matching-receipt retries', async () => {
+  const pending = runner([{ submittedItemRevisionStatus: { state: 'PENDING_REVIEW', distributionChannels: [{ crxVersion: '1.0.0.16' }] } }],
+    { env: wifEnv });
+  await assert.rejects(pending.run(), /Another version/);
+  assert.equal(pending.requests.length, 1);
+  const receipt = runner([{}, { state: 'PENDING_REVIEW' }], {
+    env: wifEnv, receipt: { name, version, runId: '123', commit: 'abc123' },
+  });
+  assert.equal((await receipt.run()).outcome, 'submitted');
+  assert.equal(receipt.requests.length, 2);
+  assert.ok(receipt.requests[1].url.endsWith(':publish'));
 });

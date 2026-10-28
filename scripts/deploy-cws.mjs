@@ -8,10 +8,30 @@ const activeSubmissionStates = new Set(['PENDING_REVIEW', 'STAGED']);
 const acceptedPublishStates = new Set(['PENDING_REVIEW', 'STAGED', 'PUBLISHED', 'PUBLISHED_TO_TESTERS']);
 
 export function deploymentConfig(env) {
-  const keys = ['CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_REFRESH_TOKEN', 'CWS_PUBLISHER_ID', 'CWS_EXTENSION_ID'];
-  const missing = keys.filter((key) => !env[key]?.trim());
+  const keys = ['CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_REFRESH_TOKEN', 'CWS_ACCESS_TOKEN',
+    'CWS_PUBLISHER_ID', 'CWS_EXTENSION_ID', 'CWS_WORKLOAD_IDENTITY_PROVIDER', 'CWS_SERVICE_ACCOUNT_EMAIL'];
+  const config = Object.fromEntries(keys.map((key) => [key, typeof env[key] === 'string' ? env[key].trim() : '']));
+  const hasProvider = !!config.CWS_WORKLOAD_IDENTITY_PROVIDER;
+  const hasServiceAccount = !!config.CWS_SERVICE_ACCOUNT_EMAIL;
+  if (hasProvider !== hasServiceAccount) {
+    throw new Error('Incomplete WIF configuration: set both CWS_WORKLOAD_IDENTITY_PROVIDER and CWS_SERVICE_ACCOUNT_EMAIL, or remove both to use OAuth refresh credentials.');
+  }
+  if (hasProvider && !/^projects\/\d+\/locations\/global\/workloadIdentityPools\/[A-Za-z0-9_-]+\/providers\/[A-Za-z0-9_-]+$/.test(config.CWS_WORKLOAD_IDENTITY_PROVIDER)) {
+    throw new Error('Invalid CWS_WORKLOAD_IDENTITY_PROVIDER. Use the complete provider resource name from Google Cloud.');
+  }
+  if (hasServiceAccount && !/^[A-Za-z0-9._-]+@[A-Za-z0-9-]+\.iam\.gserviceaccount\.com$/.test(config.CWS_SERVICE_ACCOUNT_EMAIL)) {
+    throw new Error('Invalid CWS_SERVICE_ACCOUNT_EMAIL. Use the service account email linked to the store publisher.');
+  }
+  if (hasProvider && !config.CWS_ACCESS_TOKEN) {
+    throw new Error('CWS_ACCESS_TOKEN is missing for WIF. Check the google-auth step; OAuth fallback is disabled while WIF is configured.');
+  }
+  if (config.CWS_ACCESS_TOKEN && /\s/.test(config.CWS_ACCESS_TOKEN)) {
+    throw new Error('Invalid CWS_ACCESS_TOKEN: expected one access token without whitespace.');
+  }
+  const required = ['CWS_PUBLISHER_ID', 'CWS_EXTENSION_ID'];
+  if (!config.CWS_ACCESS_TOKEN) required.push('CWS_CLIENT_ID', 'CWS_CLIENT_SECRET', 'CWS_REFRESH_TOKEN');
+  const missing = required.filter((key) => !config[key]);
   if (missing.length) throw new Error(`Missing GitHub Actions configuration: ${missing.join(', ')}. See store/automation-cws.txt.`);
-  const config = Object.fromEntries(keys.map((key) => [key, env[key].trim()]));
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(config.CWS_PUBLISHER_ID)) throw new Error('Invalid CWS_PUBLISHER_ID. Copy the Publisher ID from the store dashboard.');
   if (!/^[a-p]{32}$/.test(config.CWS_EXTENSION_ID)) throw new Error('Invalid CWS_EXTENSION_ID. Copy the 32-letter extension ID from the store dashboard.');
   config.name = `publishers/${config.CWS_PUBLISHER_ID}/items/${config.CWS_EXTENSION_ID}`;
@@ -46,8 +66,10 @@ export async function deploy({
   const config = deploymentConfig(env);
   versionParts(version);
   if (!(packageBytes instanceof Uint8Array) || !packageBytes.length) throw new Error('The upload ZIP is empty or missing.');
-  const protectedValues = [config.CWS_CLIENT_ID, config.CWS_CLIENT_SECRET, config.CWS_REFRESH_TOKEN];
-  const redact = (message) => protectedValues.reduce((result, secret) => result.split(secret).join('[redacted]'), String(message));
+  const protectedValues = [config.CWS_CLIENT_ID, config.CWS_CLIENT_SECRET, config.CWS_REFRESH_TOKEN, config.CWS_ACCESS_TOKEN].filter(Boolean);
+  const redact = (message) => [...protectedValues].sort((left, right) => right.length - left.length)
+    .reduce((result, secret) => result.split(secret).join('[redacted]'), String(message));
+  const safeLog = (message, maxLength = Infinity) => log(redact(message).slice(0, maxLength));
   async function request(label, url, options = {}) {
     let response;
     try {
@@ -67,21 +89,26 @@ export async function deploy({
     return data;
   }
 
-  const token = await request('OAuth token refresh', 'https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: config.CWS_CLIENT_ID, client_secret: config.CWS_CLIENT_SECRET,
-      refresh_token: config.CWS_REFRESH_TOKEN, grant_type: 'refresh_token',
-    }),
-  });
-  if (typeof token.access_token !== 'string' || !token.access_token) throw new Error('OAuth response did not contain an access token.');
-  protectedValues.push(token.access_token);
+  let accessToken = config.CWS_ACCESS_TOKEN;
+  if (!accessToken) {
+    const token = await request('OAuth token refresh', 'https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: config.CWS_CLIENT_ID, client_secret: config.CWS_CLIENT_SECRET,
+        refresh_token: config.CWS_REFRESH_TOKEN, grant_type: 'refresh_token',
+      }),
+    });
+    if (typeof token.access_token !== 'string' || !token.access_token) throw new Error('OAuth response did not contain an access token.');
+    accessToken = token.access_token;
+    protectedValues.push(accessToken);
+  }
   if (env.GITHUB_ACTIONS === 'true') {
-    const escapedToken = token.access_token.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+    const escapedToken = accessToken.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+    // GitHub consumes this masking command; normal messages always use safeLog.
     log(`::add-mask::${escapedToken}`);
   }
-  const headers = { Authorization: `Bearer ${token.access_token}` };
+  const headers = { Authorization: `Bearer ${accessToken}` };
   const statusUrl = `${apiOrigin}/v2/${config.name}:fetchStatus`;
   const status = await request('Store status', statusUrl, { headers });
   if (status.takenDown) throw new Error('This extension has been taken down. Resolve the issue in the store dashboard.');
@@ -96,8 +123,8 @@ export async function deploy({
   if (sameVersion(status.publishedItemRevisionStatus)
       || (activeSubmissionStates.has(status.submittedItemRevisionStatus?.state) && sameVersion(status.submittedItemRevisionStatus))) {
     const state = sameVersion(status.publishedItemRevisionStatus) ? status.publishedItemRevisionStatus.state : status.submittedItemRevisionStatus.state;
-    log(`Version ${version} is already published or submitted (${state}); no upload or publish request sent.`);
-    return { outcome: 'skipped', version, state };
+    safeLog(`Version ${version} is already published or submitted (${state}); no upload or publish request sent.`);
+    return { outcome: 'skipped', version, state: typeof state === 'string' ? redact(state) : state };
   }
   if (activeSubmissionStates.has(status.submittedItemRevisionStatus?.state)) {
     throw new Error('Another version is under review or staged. Wait for its result, then rerun this workflow. This script does not cancel an existing submission.');
@@ -112,34 +139,34 @@ export async function deploy({
     && receipt?.runId === env.GITHUB_RUN_ID && receipt?.commit === env.GITHUB_SHA
     && !!env.GITHUB_RUN_ID && !!env.GITHUB_SHA;
   if (validReceipt) {
-    log(`Restored upload receipt for ${version}; retrying its review submission.`);
+    safeLog(`Restored upload receipt for ${version}; retrying its review submission.`);
   } else {
     let uploaded = await request('Package upload', `${apiOrigin}/upload/v2/${config.name}:upload`, {
       method: 'POST', headers: { ...headers, 'Content-Type': 'application/zip' }, body: packageBytes,
     });
     let state = uploaded.uploadState;
     for (let attempt = 0; pendingUploadStates.has(state) && attempt < maxPollAttempts; attempt += 1) {
-      log(`Waiting for package validation (${attempt + 1}/${maxPollAttempts}).`);
+      safeLog(`Waiting for package validation (${attempt + 1}/${maxPollAttempts}).`);
       await wait(pollIntervalMs);
       uploaded = await request('Upload status', statusUrl, { headers });
       state = uploaded.lastAsyncUploadState;
     }
     if (pendingUploadStates.has(state)) throw new Error('Package validation did not finish within five minutes. Check the store dashboard before rerunning.');
-    if (state !== 'SUCCEEDED') throw new Error(`Package validation failed (${state || 'missing upload state'}). Check the store dashboard; no review request was sent.`);
+    if (state !== 'SUCCEEDED') throw new Error(redact(`Package validation failed (${state || 'missing upload state'}). Check the store dashboard; no review request was sent.`));
     if (uploaded.crxVersion && compareVersions(version, uploaded.crxVersion) !== 0) throw new Error('The uploaded version differs from the package version; no review request was sent.');
     await persistReceipt({ name: config.name, version, runId: env.GITHUB_RUN_ID, commit: env.GITHUB_SHA });
-    log(`Package ${version} uploaded and validated.`);
+    safeLog(`Package ${version} uploaded and validated.`);
   }
 
   const published = await request('Review submission', `${apiOrigin}/v2/${config.name}:publish`, {
     method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify({ publishType: 'DEFAULT_PUBLISH', skipReview: false }),
   });
-  if (!acceptedPublishStates.has(published.state)) throw new Error(`Unexpected submission state: ${published.state || 'missing state'}. Check the store dashboard.`);
+  if (!acceptedPublishStates.has(published.state)) throw new Error(redact(`Unexpected submission state: ${published.state || 'missing state'}. Check the store dashboard.`));
   for (const warning of published.warningInfo?.warnings || []) {
-    log(redact(`Store warning: ${warning.reason || ''} ${warning.description || ''}`).slice(0, 1500));
+    safeLog(`Store warning: ${warning.reason || ''} ${warning.description || ''}`, 1500);
   }
-  log(`Version ${version} submission accepted. Store state: ${published.state}. Updates become available after store approval.`);
+  safeLog(`Version ${version} submission accepted. Store state: ${published.state}. Updates become available after store approval.`);
   return { outcome: 'submitted', version, state: published.state };
 }
 

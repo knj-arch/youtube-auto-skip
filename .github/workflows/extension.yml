@@ -74,6 +74,9 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' && vars.CWS_PUBLISHER_ID != '' && vars.CWS_EXTENSION_ID != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -96,8 +99,31 @@ jobs:
         with:
           name: cws-upload-${{ github.run_number }}
           path: cws-deploy
+      - name: Validate WIF configuration
+        env:
+          CWS_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.CWS_WORKLOAD_IDENTITY_PROVIDER }}
+          CWS_SERVICE_ACCOUNT_EMAIL: ${{ vars.CWS_SERVICE_ACCOUNT_EMAIL }}
+        run: |
+          if [[ -n "$CWS_WORKLOAD_IDENTITY_PROVIDER" && -z "$CWS_SERVICE_ACCOUNT_EMAIL" ]] || [[ -z "$CWS_WORKLOAD_IDENTITY_PROVIDER" && -n "$CWS_SERVICE_ACCOUNT_EMAIL" ]]; then
+            echo '::error::Set both CWS_WORKLOAD_IDENTITY_PROVIDER and CWS_SERVICE_ACCOUNT_EMAIL, or remove both to use OAuth refresh credentials.'
+            exit 1
+          fi
+      - name: Authenticate to Google without a stored key
+        id: google-auth
+        if: ${{ vars.CWS_WORKLOAD_IDENTITY_PROVIDER != '' && vars.CWS_SERVICE_ACCOUNT_EMAIL != '' }}
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.CWS_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.CWS_SERVICE_ACCOUNT_EMAIL }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/chromewebstore
+          create_credentials_file: false
+          export_environment_variables: false
       - name: Upload and submit for review
         env:
+          CWS_ACCESS_TOKEN: ${{ steps['google-auth'].outputs.access_token }}
+          CWS_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.CWS_WORKLOAD_IDENTITY_PROVIDER }}
+          CWS_SERVICE_ACCOUNT_EMAIL: ${{ vars.CWS_SERVICE_ACCOUNT_EMAIL }}
           CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
           CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
           CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}

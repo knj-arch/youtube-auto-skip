@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "유튜브 자동 건너뛰기",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minimum_chrome_version": "106",
-  "description": "유튜브 광고의 건너뛰기 버튼이 나타나면 자동으로 클릭합니다.",
+  "description": "유튜브 광고를 감지하면 설정한 횟수만큼 새로고침하고, 광고가 계속되면 건너뛰기 버튼을 자동으로 누릅니다.",
   "permissions": ["storage", "debugger"],
   "background": {
     "service_worker": "background.js"
