@@ -5,10 +5,26 @@ Git push → Chrome 웹 스토어 자동 제출 설정
 GitHub Pages 개인정보 페이지는 별도 Pages 워크플로에서 갱신합니다.
 Google 심사 시간은 push 시점과 별개입니다.
 
-적용 소스: 버전 1.0.3
-실제 스토어 제출 버전: 1.0.3.6 (GitHub Actions 실행 번호 6)
+적용 소스: 버전 1.0.4
+실제 스토어 제출 버전: 1.0.4.7 (GitHub Actions 실행 번호 7)
 
-현재 연결·제출 확인 — 2026-10-28
+최신 배포·심사 상태 — 2026-10-28 15:45:28(KST) 확인
+
+  게시 버전 1.0.1: PUBLISHED_TO_TESTERS
+  제출 버전 1.0.4.7: PENDING_REVIEW
+  warned=false, takenDown=false
+
+1.0.4.7은 업로드·심사 접수까지 완료됐으며 승인·게시 완료 상태는 아닙니다.
+현재 스토어에서 설치되는 게시 버전은 기존 1.0.1의 비공개 테스터 배포입니다.
+새 버전은 승인 후 같은 범위로 자동 게시됩니다. 바로 수동 설치할 수 있는
+소스 버전 1.0.4 ZIP은 아래 GitHub 공개 릴리스에서 별도로 제공합니다.
+
+읽기 전용 상태 확인 실행:
+  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645777286
+  결과 SUCCESS, 조회 시각 2026-10-28T06:45:28.842Z / 15:45:28.842(KST)
+이 워크플로는 fetchStatus GET만 호출하며 업로드·게시·취소하지 않습니다.
+
+현재 연결 및 제출 증거
 
 GitHub OIDC / Workload Identity Federation(WIF)와 전용 서비스 계정 연결을
 완료했습니다. 스토어 개발자 계정의 서비스 계정 연결 및 GitHub Variables
@@ -16,58 +32,53 @@ GitHub OIDC / Workload Identity Federation(WIF)와 전용 서비스 계정 연�
 만들거나 저장하지 않았습니다. 전용 Cloud 프로젝트에는 결제 계정을 연결하지 않았습니다.
 
 배포 대상 소스 커밋:
-  809d2722cc37ff34598bb34379b1e756963daa65
+  87ad6a0a06b6838938669b89766ecf29c1cbffe2
 성공한 Actions 실행:
-  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40641730233
+  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645624815
 
-위 실행은 로컬과 동일한 Node 검증 99/99를 통과하고 단기 인증으로 ZIP을
+위 실행은 Node 검증 133/133을 통과하고 단기 인증으로 ZIP을
 업로드한 뒤 심사 제출까지 완료했습니다. API 응답은 다음과 같습니다.
-  Version 1.0.3.6 submission accepted. Store state: PENDING_REVIEW
-확인 시각: 2026-10-28T06:05:40Z / 한국 시각 2026-10-28 15:05:40(KST)
-
-최신 읽기 전용 상태 확인:
-  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40641802338
-  2026-10-28T06:06:11.550Z / 한국 시각 15:06:11.550(KST)
-  게시 버전 1.0.1: PUBLISHED_TO_TESTERS
-  제출 버전 1.0.3.6: PENDING_REVIEW
-  warned=false, takenDown=false
-
-1.0.3.6의 승인·게시가 완료된 상태는 아닙니다. 기존 게시 버전 1.0.1의
-비공개 테스터 배포는 유지되며 새 버전은 승인 후 같은 범위로 자동 게시됩니다.
-
-이전 제출 이력과 교체:
-  1.0.2.5는 Actions 실행 40637971335에서 14:26(KST)에 심사 접수됐습니다.
-  시작 상태 조회 실패 복구 버그를 수정해 교체하기 위해 실제 Aside
-  대시보드에서 그 심사를 취소했습니다. 읽기 전용 상태 실행 40641559594가
-  15:03:45(KST)에 CANCELLED를 확인했습니다. 현재 제출 버전은 1.0.3.6입니다.
+  Version 1.0.4.7 submission accepted. Store state: PENDING_REVIEW
+접수 확인 시각: 2026-10-28T06:44:17.1556202Z / 15:44:17.1556202(KST)
 
 CI ZIP의 runtime 파일 10개는 manifest.version 및 줄바꿈 차이를 제외하면
 검증한 소스와 일치합니다. CI ZIP SHA256:
-  F336EBA9A3B811924186BDFDAF5A47990D9A7A5F21D14B2922BD6502C9AC7FD9
-별도 수동 설치용 소스 1.0.3 ZIP은 아래 공개 릴리스에서 제공합니다.
-  https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.3
-  파일 크기 19,534바이트, 로그인 없는 다운로드 확인
-이 수동 설치 파일은 심사 중인 스토어 패키지 1.0.3.6과 버전 표기가 다릅니다.
+  E847263CD28B4C64F50FBE698B61945F03E9C8C6A06070C93DCC6002621A1833
+별도 수동 설치용 소스 1.0.4 ZIP:
+  https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.4
+  파일 크기 25,018바이트, 로그인 없는 실제 다운로드 검증 완료
+  SHA256: 632278B06BFCAEC9CDE330FB5CA75E59791D758BDFD51447EE8F8C2BA7EC309C
+수동 설치 파일은 소스 버전 1.0.4이며 심사 중인 스토어 패키지는 1.0.4.7입니다.
 
-최초 push 실행 40637592457은 ZIP 생성은 성공했지만 인증 활성화 전이라
-제출을 건너뛴 이력입니다. 위 최종 실행의 제출 성공과 구분합니다.
-개인정보 페이지 실행 40637592547도 성공했고 공개 HTTPS HTTP 200 및
-1.0.2에서 도입한 최대 새로고침 횟수 정책 반영을 확인했습니다.
+개인정보 페이지 실행:
+  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645624934
+  SUCCESS, 공개 HTTPS HTTP 200 및 1.0.4 진단·임시 상태 정책 반영 확인
+실제 Aside 개발자 대시보드에도 1.0.4 설명과 테스트 안내 저장을 확인했습니다.
 
-1.0.3은 시작할 때 새로고침 상태를 일시적으로 읽지 못하면 화면이 표시되고
-초점이 있는 동안 3초 간격으로 재조회합니다. 저장된 시도 횟수를 확인하기
-전에는 자동 새로고침하지 않습니다. 기본 3회·설정 1~10회 정책은 같습니다.
-현재 소스는 Node 검증 99개와 격리 Chromium 통합 검증 12개를 통과했습니다.
-최종 소스의 실제 광고 1건에서는 50.081초 광고에서 새로고침한 뒤 15.041초
-광고가 이어졌고 3,138ms 간격의 두 번째 새로고침 뒤 223.381초 본영상이
-1.744679초까지 진행됐습니다. 이 관찰의 실제 건너뛰기 버튼 경로와 중간 광고
-재생 위치 복원은 관찰하지 못했으며 통합 검증 결과와 구분합니다.
+1.0.4 검증 범위
 
-이후 15:08:51(KST) 별도 실제 광고에서 50.081초 광고의 5.312초에
-isTrusted=true 건너뛰기 클릭을 확인했고 256ms 뒤 같은 문서에서 본영상이
-진행했습니다. 한도 1회 자연 설정에서 시도 count=1이 예약됐으나 실제
-문서 새로고침은 0회였으므로 새로고침 완료 후 건너뛰기의 연속 성공으로
-주장하지 않습니다. 소스 변경·강제 세션 시드·외부 클릭은 없었습니다.
+최종 소스는 Node 133/133과 격리 Chromium 통합 16/16을 통과했습니다.
+실제 YouTube 광고에서 자동 새로고침 세 번 후 본영상으로 전환되어
+1.776601초까지 진행하는 것을 확인했습니다. 실제 1.0.4 광고의 건너뛰기
+버튼 경로와 중간 광고 재생 위치 복원, 다른 PC에서의 작동은 관찰하지
+못했습니다. 실제 관찰과 합성 페이지의 통합 검증을 구분합니다.
+
+1.0.4는 새로고침 처리 제한 시간을 10초로 늘리고 클릭은 2초를 유지합니다.
+새로고침 API를 호출하지 못한 것이 확실한 자체 예약은 안전하게 환불하며,
+저장·발송 여부가 불확실한 경우에는 횟수를 추측해 되돌리지 않습니다.
+유효한 광고 문서가 하위 리소스를 불러오는 중이라는 이유만으로 차단하지
+않으며 문서 ID·URL·활성 탭·창 초점과 광고 상태 검사는 유지합니다.
+처리 실패 후에는 저장된 횟수를 다시 확인하고, 팝업에서 버전과 현재 연결·
+처리 결과를 주소·계정 정보 없이 확인하고 복사할 수 있습니다.
+
+이전 제출 이력
+
+  1.0.3.6: 심사 접수 후 1.0.4로 교체하기 위해 취소했습니다.
+    취소 확인 실행 https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645367291
+    2026-10-28T06:41:27.912Z / 15:41:27.912(KST), CANCELLED 확인
+  1.0.2.5: 14:26(KST)에 접수됐으며 1.0.3 교체 전에 취소했습니다.
+    이전 상태 조회 40641559594에서 15:03:45(KST), CANCELLED 확인
+이전 버전의 실제 광고·테스트 결과는 store/verification.txt에 구분해 기록합니다.
 
 현재 보고 있는 Chrome 창의 활성 YouTube /watch 영상 탭에서 광고를 감지하면
 설정한 최대 횟수까지 최소 3초 간격으로 새로고침합니다. 기본 3회이며 팝업에서
@@ -83,9 +94,8 @@ storage 및 debugger 권한 사유, 현재 탭 주소·상태와 버튼 DOM·좌
 API는 스토어 소개, 권한 사유와 개인정보 공개 항목을 자동으로 갱신하지
 않으므로 최초 교체 제출 전에 대시보드에서 직접 반영해야 합니다.
 
-기존 1.0.0의 취소·교체는 Aside CLI의 실제 대시보드 화면에서 완료했습니다.
 현재 워크플로는 이전 심사를 취소하지 않습니다. API가 연결돼 있으므로
-확장 프로그램 코드를 main에 push할 때 자동 제출이 실행될 수 있으므로
+확장 프로그램 코드를 main에 push하면 자동 제출이 실행될 수 있습니다.
 현재 버전의 실제 검증과 대시보드 공개 내용 갱신을 먼저 완료합니다.
 .verification/ 검증 산출물, 브라우저 프로필, 개인 계정 정보 및 비밀정보는
 공개 저장소·배포 패키지·워크플로 artifact에 넣지 않습니다.
@@ -110,8 +120,8 @@ main 브랜치 실행이 OIDC로 전용 서비스 계정을 가장하여 단기 
 받고, 배포 스크립트에는 실행 중 CWS_ACCESS_TOKEN으로만 전달합니다.
 
 전용 Google Cloud 프로젝트를 사용합니다. 다른 제품의 운영 프로젝트나 기존
-서비스 계정 권한을 이 확장의 배포에 재사용하지 않습니다. Cloud 설정이 완료되면
-아래 대상 값이 실제 리소스와 일치하는지 확인합니다. 값 자체는 비밀정보가 아닙니다.
+서비스 계정 권한을 이 확장의 배포에 재사용하지 않습니다. 아래는 실제 연결한
+대상 값이며 설정을 변경할 때 실제 리소스와 대조합니다. 값 자체는 비밀정보가 아닙니다.
 
   프로젝트: knj-youtube-auto-skip-cws
   프로젝트 번호: 201518632423
@@ -147,7 +157,7 @@ principalSet만 허용합니다. 위 provider 조건이 소유자·브랜치·�
 계정 항목에 별도로 연결합니다. Cloud IAM 설정만으로 스토어 게시자 권한이
 생기지는 않습니다. 공식 안내의 게시자당 연결 가능한 서비스 계정 제한도 확인합니다.
 
-워크플로는 submit job에만 contents:read, id-token:write를 부여합니다.
+배포 워크플로는 submit job에만 contents:read, id-token:write를 부여합니다.
 google-github-actions/auth@v3는 service account impersonation으로
 token_format=access_token, scope=https://www.googleapis.com/auth/chromewebstore를
 사용하며 create_credentials_file=false, export_environment_variables=false입니다.
@@ -220,11 +230,13 @@ OAuth fallback 방식에만 필요한 Secrets:
 기존처럼 코드를 고치고 main에 push합니다. Actions의
 Extension package and store submission에서 ZIP과 제출 결과를 확인하세요.
 Actions 실행본에서만 manifest.version에 실행 번호가 붙습니다.
-이번 제출: 소스 1.0.3 + workflow run number 6 → 스토어 버전 1.0.3.6
+이번 제출: 소스 1.0.4 + workflow run number 7 → 스토어 버전 1.0.4.7
 로컬 소스 manifest와 Git 기록은 자동 버전 처리로 바뀌지 않습니다.
 확장 코드/아이콘/패키징/배포 스크립트 변경이 이 워크플로를 실행합니다.
 README나 개인정보 페이지 변경은 스토어 버전을 새로 제출하지 않습니다.
 필요하면 Actions의 Run workflow를 main에서 실행할 수 있습니다.
+상태만 확인하려면 별도 Chrome Web Store status 워크플로를 수동 실행합니다.
+그 워크플로는 버전을 올리거나 업로드·심사 제출하지 않습니다.
 큰 릴리스 때는 소스의 앞 3자리 버전을 직접 올립니다.
 실행 번호가 65535에 도달하기 전 기본 버전을 올리고 새 워크플로 이름으로
 실행 번호를 다시 시작해야 합니다(파일 이름 변경 필요).
