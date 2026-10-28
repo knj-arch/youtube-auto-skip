@@ -1,6 +1,7 @@
 "use strict";
 
 const OPERATION_TIMEOUT_MS = 2000;
+const RELOAD_OPERATION_TIMEOUT_MS = 10000;
 const ATTEMPT_COOLDOWN_MS = 1500;
 const RELOAD_INTERVAL_MS = 3000;
 const RESUME_LIFETIME_MS = 60000;
@@ -8,6 +9,7 @@ const jobs = new Map();
 const blockedDocuments = new Map();
 const lastAttempts = new Map();
 const reloadStateQueues = new Map();
+const lastActions = new Map();
 let automationPaused = false;
 
 // This fixed expression returns only the current skip-button coordinates.
@@ -159,7 +161,9 @@ async function checkDocumentAndForeground(job, requireAd = false) {
   ]));
   if (settings.enabled === false) throw new StopOperation("disabled");
   if (!tab.active || tab.windowId !== job.windowId || !windowInfo.focused ||
-      tab.discarded || tab.frozen || tab.status === "loading") throw new StopOperation("inactive");
+      tab.discarded || tab.frozen) throw new StopOperation("inactive");
+  // Subresources can keep an already valid, visible document "loading".
+  // The pinned document reply, URLs and navigation events determine validity.
   // tabs.get may omit URL without the broad tabs permission. CDP below always
   // checks the actual URL; if Chrome exposes tab URLs, also check them here.
   if ((tab.url !== undefined && tab.url !== job.url) ||
@@ -172,6 +176,48 @@ async function checkDocumentAndForeground(job, requireAd = false) {
 function maxReloads(value) {
   return typeof value === "number" && Number.isFinite(value) ?
     Math.min(10, Math.max(1, Math.trunc(value))) : 3;
+}
+
+function recordAction(job, reply) {
+  if (job.diagnosticStale) return;
+  // One in-memory result per open tab, with no URL, title or viewing history.
+  lastActions.set(job.tabId, { operation: job.kind, ok: reply?.ok === true,
+    reason: reply?.ok === true ? "ok" : reply?.reason || "failed",
+    ...(Number.isInteger(reply?.reloadCount) ? { reloadCount: reply.reloadCount } : {}),
+    elapsedMs: Math.max(0, Date.now() - job.startedAt), at: Date.now(), documentId: job.documentId });
+}
+
+async function contentDiagnostics(tabId) {
+  let timer;
+  try {
+    return await Promise.race([
+      chrome.tabs.sendMessage(tabId, { type: "automation-content-status" }, { frameId: 0 })
+        .then(reply => reply?.connected === true ? reply : { connected: false, reason: "no-content-script" },
+          () => ({ connected: false, reason: "no-content-script" })),
+      new Promise(resolve => { timer = setTimeout(() => resolve({ connected: false, reason: "timeout" }), 1500); })
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+async function collectDiagnostics(tabId) {
+  const [tab, settings] = await Promise.all([
+    chrome.tabs.get(tabId), chrome.storage.local.get({ enabled: true, maxReloads: 3 })
+  ]);
+  const supported = typeof tab.url === "string" ? watchVideoId(tab.url) !== null : null;
+  const [windowInfo, content] = await Promise.all([
+    chrome.windows.get(tab.windowId),
+    supported === false ? Promise.resolve({ connected: false, reason: "unsupported-page" }) : contentDiagnostics(tabId)
+  ]);
+  const result = { ok: true, version: chrome.runtime.getManifest().version,
+    enabled: settings.enabled !== false, maxReloads: maxReloads(settings.maxReloads),
+    page: { supported, active: tab.active === true, windowFocused: windowInfo.focused === true,
+      loading: tab.status === "loading", discarded: tab.discarded === true, frozen: tab.frozen === true }, content };
+  const last = lastActions.get(tabId);
+  if (last) {
+    const { documentId, at, ...publicResult } = last;
+    result.lastAction = { ...publicResult, ageMs: Math.max(0, Date.now() - at) };
+  }
+  return result;
 }
 
 function reloadStateKey(tabId) {
@@ -267,11 +313,42 @@ async function resumeComplete(message, sender) {
   }
 }
 
-async function discardResume(job) {
+function matchesReservation(record, reservation) {
+  return record && reservation && record.videoId === reservation.videoId &&
+    record.sourceDocumentId === reservation.sourceDocumentId &&
+    record.reloadCount === reservation.reloadCount && record.lastReloadAt === reservation.lastReloadAt;
+}
+
+async function rollbackReloadReservation(job) {
+  if (job.reloadDispatched || !job.reloadReservation) return;
   try {
     await withReloadState(job.tabId, async () => {
       const record = await readReloadRecord(job.tabId);
-      if (record?.videoId !== job.videoId || record.sourceDocumentId !== job.documentId ||
+      if (!matchesReservation(record, job.reloadReservation)) {
+        job.reloadCount = record?.videoId === job.videoId ? record.reloadCount : 0;
+        return;
+      }
+      if (job.previousReloadRecord) {
+        // Never resurrect a position already acknowledged or replaced meanwhile.
+        const restored = withoutResume(job.previousReloadRecord);
+        await chrome.storage.session.set({ [reloadStateKey(job.tabId)]: restored });
+        job.reloadCount = restored.videoId === job.videoId ? restored.reloadCount : 0;
+      } else {
+        await chrome.storage.session.remove(reloadStateKey(job.tabId));
+        job.reloadCount = 0;
+      }
+    });
+  } catch {
+    // An unconfirmed rollback keeps the positively saved count as consumed.
+  }
+}
+
+async function discardResume(job) {
+  if (!job.reloadReservation) return;
+  try {
+    await withReloadState(job.tabId, async () => {
+      const record = await readReloadRecord(job.tabId);
+      if (!matchesReservation(record, job.reloadReservation) ||
           (record.resumeTime === undefined && record.resumeExpiresAt === undefined)) return;
       await chrome.storage.session.set({ [reloadStateKey(job.tabId)]: withoutResume(record) });
     });
@@ -281,7 +358,7 @@ async function discardResume(job) {
 }
 
 async function reloadAd(job, resumeTime) {
-  const timer = setTimeout(() => stop(job, "timeout"), OPERATION_TIMEOUT_MS);
+  const timer = setTimeout(() => stop(job, "timeout"), RELOAD_OPERATION_TIMEOUT_MS);
   try {
     const settings = await checkDocumentAndForeground(job, true);
     const reservation = await step(job, () => withReloadState(job.tabId, async () => {
@@ -289,6 +366,7 @@ async function reloadAd(job, resumeTime) {
       try {
         record = await readReloadRecord(job.tabId);
         ensureRunning(job);
+        const previous = record ? { ...record } : undefined;
         if (record?.videoId !== job.videoId) record = undefined;
         const count = record?.reloadCount || 0;
         job.reloadCount = count;
@@ -306,7 +384,14 @@ async function reloadAd(job, resumeTime) {
           next.resumeExpiresAt = Date.now() + RESUME_LIFETIME_MS;
         }
         // Persist before navigation so a new worker/document cannot reload again.
+        // Until the write acknowledges success its resulting count is unknown.
+        delete job.reloadCount;
         await chrome.storage.session.set({ [reloadStateKey(job.tabId)]: next });
+        job.previousReloadRecord = previous;
+        job.reloadReservation = {
+          videoId: next.videoId, sourceDocumentId: next.sourceDocumentId,
+          reloadCount: next.reloadCount, lastReloadAt: next.lastReloadAt,
+        };
         job.reloadCount = next.reloadCount;
       } catch (error) {
         if (error instanceof StopOperation) throw error;
@@ -320,11 +405,14 @@ async function reloadAd(job, resumeTime) {
     if (job.reloadCount > maxReloads(latestSettings.maxReloads)) throw new StopOperation("reload-limit");
     ensureRunning(job);
     job.reloading = true;
+    job.reloadDispatched = true;
     await chrome.tabs.reload(job.tabId);
     return { ok: true, reloading: true, reloadCount: job.reloadCount };
   } catch (error) {
+    await rollbackReloadReservation(job);
     await discardResume(job);
     return { ok: false, reason: error instanceof StopOperation ? error.reason : "failed",
+      retryAfterMs: RELOAD_INTERVAL_MS,
       ...(Number.isInteger(job.reloadCount) ? { reloadCount: job.reloadCount } : {}) };
   } finally {
     clearTimeout(timer);
@@ -401,8 +489,23 @@ async function skip(job) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message?.type === "automation-diagnostics") {
+    if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL("popup.html") ||
+        !Number.isInteger(message.tabId) || message.tabId < 0) return false;
+    collectDiagnostics(message.tabId).then(respond, () => respond({ ok: false, reason: "unavailable" }));
+    return true;
+  }
   if (!permittedRequest(message, sender)) return false;
   if (message.type === "ad-reload-state") {
+    if (lastActions.get(sender.tab.id)?.documentId !== sender.documentId) lastActions.delete(sender.tab.id);
+    const pendingJob = jobs.get(sender.tab.id);
+    if (pendingJob) {
+      if (pendingJob.documentId !== sender.documentId) pendingJob.diagnosticStale = true;
+      // A reservation may still be rolled back. Do not let another document
+      // cache that provisional count as an exhausted, final budget.
+      respond({ ok: false, reason: "busy" });
+      return false;
+    }
     reloadState(message, sender).then(respond, () => respond({ ok: false, reason: "reload-state-unavailable" }));
     return true;
   }
@@ -421,13 +524,18 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     respond({ ok: false, reason: "busy" });
     return false;
   }
+  const operationTimeout = message.type === "reload-ad" ? RELOAD_OPERATION_TIMEOUT_MS : OPERATION_TIMEOUT_MS;
   const job = { tabId, kind: message.type, videoId: watchVideoId(message.url),
     windowId: sender.tab.windowId, documentId: sender.documentId,
-    url: message.url, deadline: now + OPERATION_TIMEOUT_MS, attached: false, pressed: false };
+    url: message.url, startedAt: now, deadline: now + operationTimeout, attached: false, pressed: false };
   lastAttempts.set(tabId, now);
   jobs.set(tabId, job);
   const operation = message.type === "reload-ad" ? reloadAd(job, message.resumeTime) : skip(job);
-  operation.then(respond, () => respond({ ok: false, reason: "failed" }));
+  operation.then(reply => { recordAction(job, reply); respond(reply); }, () => {
+    const reply = { ok: false, reason: "failed" };
+    recordAction(job, reply);
+    respond(reply);
+  });
   return true;
 });
 
@@ -467,7 +575,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.url) lastActions.delete(tabId);
   const job = jobs.get(tabId);
+  if (job && (change.url || change.status === "loading")) job.diagnosticStale = true;
   const ownReload = job?.kind === "reload-ad" && job.reloading &&
     (!change.url || change.url === job.url);
   if (job && ((!ownReload && change.status === "loading") || (change.url && change.url !== job.url))) {
@@ -485,7 +595,9 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
   }
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
+  lastActions.delete(tabId);
   const job = jobs.get(tabId);
+  if (job) job.diagnosticStale = true;
   if (job) stop(job, "document-changed");
   blockedDocuments.delete(tabId);
   lastAttempts.delete(tabId);

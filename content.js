@@ -15,6 +15,10 @@
   const STATE_READ_RETRY_MS = 3000;
   const MAIN_VIDEO_SETTLE_MS = 500;
   const RESUME_TIMEOUT_MS = 15000;
+  const SCRIPT_VERSION = chrome.runtime.getManifest().version;
+  const RESULT_REASONS = new Set(["ok", "timeout", "failed", "busy", "inactive", "disabled",
+    "document-changed", "ad-not-showing", "reload-state-unavailable", "retry-later", "reload-limit",
+    "debugger-unavailable", "target-unavailable", "cleanup-failed", "cancelled", "no-response", "message-failed"]);
   const players = new Map();
   const videos = new Map();
   const lastClicks = new WeakMap();
@@ -36,7 +40,12 @@
   }
 
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
-    if (sender.id !== chrome.runtime.id || message?.type !== "confirm-skip-document") return;
+    if (sender.id !== chrome.runtime.id) return;
+    if (message?.type === "automation-content-status") {
+      respond(diagnosticSnapshot());
+      return;
+    }
+    if (message?.type !== "confirm-skip-document") return;
     const adShowing = Boolean(document.querySelector(
       ".html5-video-player.ad-showing, .html5-video-player.ad-interrupting"
     ));
@@ -61,6 +70,43 @@
     return enabled && videoState === state && watchVideoId() === state.id;
   }
 
+  function recordResult(state, operation, reply, fallback = "no-response") {
+    if (!isCurrent(state)) return;
+    const reason = reply?.ok === true ? "ok" : RESULT_REASONS.has(reply?.reason) ? reply.reason : fallback;
+    state.lastResult = { operation, ok: reply?.ok === true, reason, at: Date.now() };
+  }
+
+  function diagnosticSnapshot() {
+    const current = videoState?.id === watchVideoId() ? videoState : undefined;
+    const currentPlayers = Array.from(document.querySelectorAll(PLAYER_SELECTOR));
+    const candidates = currentPlayers.flatMap(player => Array.from(player.querySelectorAll(SKIP_SELECTOR)));
+    const result = { connected: true, build: SCRIPT_VERSION, supported: Boolean(watchVideoId()), enabled,
+      visibility: document.visibilityState, focused: document.hasFocus(), players: currentPlayers.length,
+      adPlayers: currentPlayers.filter(player => player.matches(".ad-showing, .ad-interrupting")).length,
+      skipButtons: candidates.length,
+      eligibleSkipButtons: candidates.filter(button => canClick(button, button.closest(PLAYER_SELECTOR))).length,
+      state: current ? { ready: current.ready, reloadCount: current.reloadCount,
+        refreshUnavailable: current.refreshUnavailable, reloading: current.reloading,
+        nextReloadMs: Math.max(0, current.nextReloadAttempt - Date.now()) } : null };
+    if (current?.lastResult) {
+      const { operation, ok, reason, at } = current.lastResult;
+      result.lastResult = { operation, ok, reason, ageMs: Math.max(0, Date.now() - at) };
+    }
+    if (current?.lastForeground) result.lastForeground = { focused: true,
+      adPlayers: current.lastForeground.adPlayers, ageMs: Math.max(0, Date.now() - current.lastForeground.at) };
+    return result;
+  }
+
+  function recoverReloadState(state) {
+    // A failed response does not tell us whether the worker reserved an attempt
+    // or already dispatched a reload. Re-read the persisted guard before retrying.
+    state.ready = false;
+    state.refreshUnavailable = true;
+    state.reloading = false;
+    state.nextStateReadAt = Date.now() + STATE_READ_RETRY_MS;
+    state.nextReloadAttempt = Math.max(state.nextReloadAttempt, state.nextStateReadAt);
+  }
+
   function readReloadState(state) {
     if (!state || !isCurrent(state) || state.ready || state.stateReadInFlight ||
         document.visibilityState !== "visible" || !document.hasFocus() ||
@@ -74,6 +120,7 @@
       state.stateReadInFlight = false;
       state.ready = false;
       state.refreshUnavailable = true;
+      recordResult(state, "ad-reload-state", undefined, "message-failed");
       scheduleScan();
       return;
     }
@@ -83,6 +130,7 @@
       state.refreshUnavailable = reply?.ok !== true || !Number.isInteger(reply.reloadCount) ||
         reply.reloadCount < 0;
       state.ready = !state.refreshUnavailable;
+      recordResult(state, "ad-reload-state", reply);
       if (!state.ready) return;
       state.reloadCount = reply.reloadCount;
       if (Number.isFinite(reply?.retryAfterMs) && reply.retryAfterMs > 0) {
@@ -95,6 +143,7 @@
       if (!isCurrent(state)) return;
       state.ready = false;
       state.refreshUnavailable = true;
+      recordResult(state, "ad-reload-state", undefined, "message-failed");
     }).finally(() => {
       state.stateReadInFlight = false;
       if (isCurrent(state)) scheduleScan();
@@ -159,9 +208,11 @@
     const request = { state };
     requestInFlight = request;
     state.nextReloadAttempt = Date.now() + RELOAD_INTERVAL_MS;
-    chrome.runtime.sendMessage({ type: "reload-ad", url: location.href,
-      resumeTime: state.lastMainTime > 0 ? state.lastMainTime : state.resumeTime }).then(reply => {
+    const message = { type: "reload-ad", url: location.href,
+      resumeTime: state.lastMainTime > 0 ? state.lastMainTime : state.resumeTime };
+    Promise.resolve().then(() => chrome.runtime.sendMessage(message)).then(reply => {
       if (!isCurrent(state)) return;
+      recordResult(state, "reload-ad", reply);
       if (Number.isInteger(reply?.reloadCount) && reply.reloadCount >= 0) state.reloadCount = reply.reloadCount;
       if (reply?.ok) {
         state.reloading = reply.reloading === true;
@@ -172,13 +223,14 @@
       } else if (reply?.reason === "reload-limit") {
         // The worker reads the preference again before every reload.
         state.reloadCount = Math.max(state.reloadCount, maxReloads);
-      } else if (!["busy", "inactive", "disabled", "document-changed"].includes(reply?.reason)) {
-        state.refreshUnavailable = true;
+      } else {
+        recoverReloadState(state);
       }
     }).catch(() => {
-      // A reload can close the old message channel. The new document reads
-      // the guard from the worker; this document must not keep refreshing.
-      if (isCurrent(state)) state.refreshUnavailable = true;
+      if (isCurrent(state)) {
+        recordResult(state, "reload-ad", undefined, "message-failed");
+        recoverReloadState(state);
+      }
     }).finally(() => {
       if (requestInFlight === request) requestInFlight = undefined;
       scheduleScan();
@@ -236,6 +288,9 @@
     }
 
     const state = syncVideoState();
+    if (state) state.lastForeground = { at: Date.now(),
+      adPlayers: [...players.keys()].filter(player => player.isConnected &&
+        player.matches(".ad-showing, .ad-interrupting")).length };
     if (!state || state.reloading || (!state.ready && !state.refreshUnavailable)) return;
 
     for (const player of players.keys()) {
@@ -259,7 +314,8 @@
         const request = { state };
         requestInFlight = request;
         chrome.runtime.sendMessage({ type: "skip-ad", url: location.href })
-          .catch(() => {})
+          .then(reply => recordResult(state, "skip-ad", reply))
+          .catch(() => recordResult(state, "skip-ad", undefined, "message-failed"))
           .finally(() => {
             if (requestInFlight === request) requestInFlight = undefined;
           });

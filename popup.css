@@ -55,6 +55,27 @@ input[type="number"][aria-invalid="true"] { border-color: #c53045; }
 .permission summary { cursor: pointer; width: fit-content; }
 .permission summary:focus-visible { outline: 2px solid #bac8ff; outline-offset: 3px; border-radius: 2px; }
 .permission p { margin: 8px 0 0; word-break: keep-all; }
+.diagnostics { margin-top: 14px; padding-top: 12px; border-top: 1px solid #e9edf5; color: #59667a; font-size: 11px; line-height: 1.6; }
+.diagnostics summary { width: fit-content; cursor: pointer; font-weight: 600; color: #334155; }
+.diagnostics summary:focus-visible, .diagnostic-actions button:focus-visible, .diagnostic-report:focus-visible {
+  outline: 2px solid #bac8ff; outline-offset: 3px; border-radius: 4px;
+}
+.diagnostic-help { margin: 10px 0; word-break: keep-all; }
+.diagnostic-actions { display: flex; gap: 8px; }
+.diagnostic-actions button {
+  padding: 7px 12px; border: 1px solid #dce3ee; border-radius: 8px; background: #fff;
+  color: #334155; font: inherit; font-weight: 600; cursor: pointer;
+}
+#diagnostic-check { border-color: #4263eb; background: #4263eb; color: #fff; }
+.diagnostic-actions button:disabled { opacity: .55; cursor: default; }
+.diagnostic-status { margin: 10px 0; color: #334155; word-break: keep-all; }
+.diagnostic-label { display: block; margin-bottom: 5px; color: #667389; }
+.diagnostic-report {
+  display: block; width: 100%; min-height: 132px; max-height: 240px; padding: 9px;
+  border: 1px solid #dce3ee; border-radius: 8px; background: #f8faff; color: #334155;
+  font: 10px/1.5 ui-monospace, Consolas, monospace; white-space: pre; resize: vertical;
+}
+.diagnostic-copy-status { min-height: 16px; margin: 6px 0 0; color: #4263eb; word-break: keep-all; }
 .update-hint { margin: 14px 0 0; color: #6c788b; font-size: 11px; line-height: 1.6; word-break: keep-all; }
 .version { margin: 8px 0 0; color: #727d90; font-size: 10px; line-height: 1.4; }
 .error { margin: 16px 0 0; padding: 10px 12px; border-radius: 8px; color: #a12432; background: #fff2f3; font-size: 12px; line-height: 1.6; word-break: keep-all; }

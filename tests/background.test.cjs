@@ -30,7 +30,8 @@ function harness(options = {}) {
   const events = { message: event(), detach: event(), debugger: event(), storage: event(),
     updated: event(), activated: event(), removed: event(), focused: event() };
   const chrome = {
-    runtime: { id: "own-extension", onMessage: events.message },
+    runtime: { id: "own-extension", onMessage: events.message,
+      getManifest: () => ({ version: "1.0.4" }), getURL: name => "chrome-extension://own-extension/" + name },
     storage: {
       local: {
         get: async () => {
@@ -62,6 +63,7 @@ function harness(options = {}) {
         },
         remove: async key => {
           calls.sessionRemoves.push(key);
+          if (options.sessionRemoveError) throw new Error("Session storage removal failed");
           delete sessionData[key];
         }
       }, onChanged: events.storage
@@ -73,6 +75,12 @@ function harness(options = {}) {
       },
       sendMessage: async (tabId, message, target) => {
         calls.confirms.push({ tabId, message, target });
+        if (message.type === "automation-content-status") {
+          if (options.diagnosticError) throw new Error("No diagnostic script");
+          return options.diagnosticReply || { connected: true, build: "1.0.4", supported: true,
+            enabled: true, focused: false, visibility: "visible", players: 1, adPlayers: 1 };
+        }
+        if (options.beforeConfirm) await options.beforeConfirm({ calls, state, events, sessionData });
         if (options.confirmError) throw new Error("No matching document");
         return { ok: state.confirmation, url: state.url, adShowing: state.adShowing };
       },
@@ -143,6 +151,53 @@ test("uses only fixed CDP commands and the freshly verified target, with pinned 
   assert.ok(h.calls.confirms.every(item => item.target.documentId === "document-a" && item.target.frameId === 0));
   assert.ok(h.calls.commands.filter(item => item.method === "Runtime.evaluate").every(item =>
     !item.params.expression.includes("caller code") && item.params.returnByValue));
+});
+
+test("popup diagnostics read status without reload, debugger input, or state writes", async () => {
+  const h = harness({ state: { tab: { status: "loading", url: WATCH } } });
+  const reply = await h.request({ type: "automation-diagnostics", tabId: 7 },
+    { url: "chrome-extension://own-extension/popup.html" });
+  assert.equal(reply.ok, true);
+  assert.equal(reply.page.loading, true);
+  assert.equal(reply.content.connected, true);
+  assert.equal(reply.content.focused, false);
+  assert.equal(reply.content.adPlayers, 1);
+  assert.equal(h.calls.reloads.length, 0);
+  assert.equal(h.calls.attach.length, 0);
+  assert.equal(h.calls.sessionWrites.length, 0);
+  assert.equal(JSON.stringify(reply).includes("video-a"), false);
+  assert.equal(JSON.stringify(reply).includes("youtube.com"), false);
+});
+
+test("diagnostics are restricted to the own popup and distinguish unsupported or disconnected tabs", async () => {
+  const h = harness();
+  for (const sender of [{}, { id: "other", url: "chrome-extension://own-extension/popup.html" },
+    { url: "chrome-extension://own-extension/other.html" }]) {
+    assert.equal(await h.request({ type: "automation-diagnostics", tabId: 7 }, sender), undefined);
+  }
+  const popup = { url: "chrome-extension://own-extension/popup.html" };
+  assert.equal(await h.request({ type: "automation-diagnostics", tabId: -1 }, popup), undefined);
+  const disconnected = harness({ diagnosticError: true });
+  assert.equal((await disconnected.request({ type: "automation-diagnostics", tabId: 7 }, popup)).content.reason,
+    "no-content-script");
+  const unsupported = harness({ state: { tab: { url: "https://example.com/" } } });
+  assert.equal((await unsupported.request({ type: "automation-diagnostics", tabId: 7 }, popup)).page.supported, false);
+  assert.equal(unsupported.calls.confirms.length, 0);
+});
+
+test("diagnostics retain a failed action reason but omit its document ID and clear on tab close", async () => {
+  const h = harness({ reloadError: true });
+  await h.request({ type: "reload-ad" });
+  const popup = { url: "chrome-extension://own-extension/popup.html" };
+  let reply = await h.request({ type: "automation-diagnostics", tabId: 7 }, popup);
+  assert.equal(reply.lastAction.operation, "reload-ad");
+  assert.equal(reply.lastAction.reason, "failed");
+  assert.equal(reply.lastAction.reloadCount, 1);
+  assert.equal(JSON.stringify(reply).includes("document-a"), false);
+  h.events.removed.emit(7);
+  await flush();
+  reply = await h.request({ type: "automation-diagnostics", tabId: 7 }, popup);
+  assert.equal(reply.lastAction, undefined);
 });
 
 test("rejects other extensions, subframes, missing documents, inactive documents, and other origins", async () => {
@@ -469,14 +524,15 @@ test("disabled settings, background tabs, lost focus, absent ads, and stale docu
   assert.equal(h.calls.reloads.length, 0);
 });
 
-test("settings, focus, document identity and ad state are rechecked after guard persistence", async () => {
+test("settings, focus, document identity and ad state are rechecked and unissued reservations are refunded", async () => {
   for (const changed of [{ enabled: false }, { active: false }, { focused: false },
     { adShowing: false }, { confirmation: false }, { url: WATCH + "&t=changed" }]) {
     const h = harness({ afterSessionWrite: ({ state }) => Object.assign(state, changed) });
     const reply = await h.request({ type: "reload-ad" });
     assert.equal(reply.ok, false);
     assert.equal(h.calls.reloads.length, 0);
-    assert.equal(h.sessionData["ad-reload:7"].videoId, "video-a");
+    assert.equal(h.sessionData["ad-reload:7"], undefined);
+    assert.equal(reply.reloadCount, 0);
     assert.equal(h.calls.confirms.length, 2);
   }
 });
@@ -488,10 +544,12 @@ test("concurrent reloads and skip requests share the same tab lock", async () =>
   await flush();
   assert.equal((await h.request({ type: "reload-ad" })).reason, "busy");
   assert.equal((await h.request()).reason, "busy");
+  assert.equal((await h.request({ type: "ad-reload-state" }, { documentId: "next-document" })).reason, "busy");
   assert.equal(h.calls.sessionWrites.length, 1);
   sessionWriteDeferred.resolve();
   assert.equal((await first).reloading, true);
   assert.equal(h.calls.reloads.length, 1);
+  assert.equal((await h.request({ type: "ad-reload-state" }, { documentId: "next-document" })).reloadCount, 1);
 });
 
 test("a tab closed while saving cannot reload or leave a session record behind", async () => {
@@ -502,6 +560,9 @@ test("a tab closed while saving cannot reload or leave a session record behind",
   h.events.removed.emit(7);
   sessionWriteDeferred.resolve();
   assert.equal((await first).ok, false);
+  const diagnostic = await h.request({ type: "automation-diagnostics", tabId: 7 },
+    { url: "chrome-extension://own-extension/popup.html" });
+  assert.equal(diagnostic.lastAction, undefined);
   await flush();
   assert.equal(h.calls.reloads.length, 0);
   assert.equal(h.sessionData["ad-reload:7"], undefined);
@@ -535,15 +596,14 @@ test("a failed reload discards its resume payload while retaining the same-video
   assert.equal(later.resumeTime, undefined);
 });
 
-test("failed post-save verification clears playback restoration and retains the consumed attempt", async () => {
+test("failed post-save verification removes an unissued first reservation and its playback restoration", async () => {
   for (const changed of [{ enabled: false }, { focused: false }, { adShowing: false }, { confirmation: false }]) {
     const h = harness({ afterSessionWrite: ({ state }) => Object.assign(state, changed) });
-    assert.equal((await h.request({ type: "reload-ad", resumeTime: 180 })).ok, false);
+    const reply = await h.request({ type: "reload-ad", resumeTime: 180 });
+    assert.equal(reply.ok, false);
+    assert.equal(reply.reloadCount, 0);
     assert.equal(h.calls.reloads.length, 0);
-    assert.equal(h.sessionData["ad-reload:7"].videoId, "video-a");
-    assert.equal(h.sessionData["ad-reload:7"].reloadCount, 1);
-    assert.equal(h.sessionData["ad-reload:7"].resumeTime, undefined);
-    assert.equal(h.sessionData["ad-reload:7"].resumeExpiresAt, undefined);
+    assert.equal(h.sessionData["ad-reload:7"], undefined);
   }
 });
 
@@ -667,15 +727,15 @@ test("changing the saved limit affects the next attempt without resetting its co
   assert.equal(h.calls.reloads.length, 5);
 });
 
-test("a lower limit saved during guard persistence prevents that reload and preserves the consumed count", async () => {
+test("a lower limit saved during guard persistence prevents that reload and refunds its reservation", async () => {
   const sessionData = { "ad-reload:7": reloadRecord({ lastReloadAt: 7000, sourceDocumentId: "previous" }) };
   const h = harness({ sessionData, state: { maxReloads: 3 },
     afterSessionWrite: ({ state }) => { state.maxReloads = 1; } });
   const reply = await h.request({ type: "reload-ad", resumeTime: 100 });
   assert.equal(reply.reason, "reload-limit");
-  assert.equal(reply.reloadCount, 2);
+  assert.equal(reply.reloadCount, 1);
   assert.equal(h.calls.reloads.length, 0);
-  assert.equal(h.sessionData["ad-reload:7"].reloadCount, 2);
+  assert.equal(h.sessionData["ad-reload:7"].reloadCount, 1);
   assert.equal(h.sessionData["ad-reload:7"].resumeTime, undefined);
 });
 
@@ -759,4 +819,141 @@ test("a newer main-video position supersedes an inherited one and old-video ackn
   const old = await h.request({ type: "ad-resume-complete", url: WATCH }, { documentId: "document-d" });
   assert.equal(old.cleared, false);
   assert.equal(h.sessionData["ad-reload:7"].resumeTime, 22);
+});
+
+test("reloads tolerate a 2.5-second document confirmation while skip operations keep their two-second deadline", async () => {
+  for (const confirmation of [1, 2]) {
+    const h = harness({ beforeConfirm: ({ calls, state }) => {
+      if (calls.confirms.length === confirmation) state.now += 2500;
+    } });
+    const reply = await h.request({ type: "reload-ad" });
+    assert.equal(reply.reloading, true);
+    assert.equal(reply.reloadCount, 1);
+    assert.equal(h.calls.reloads.length, 1);
+  }
+  const skip = harness({ beforeConfirm: ({ state }) => { state.now += 2500; } });
+  assert.equal((await skip.request()).reason, "timeout");
+  assert.equal(skip.calls.attach.length, 0);
+});
+
+test("slow storage and post-save confirmation share the longer reload deadline", async () => {
+  const h = harness({
+    afterSessionWrite: ({ state }) => { state.now += 2500; },
+    beforeConfirm: ({ calls, state }) => { if (calls.confirms.length === 2) state.now += 2500; },
+  });
+  assert.equal((await h.request({ type: "reload-ad" })).reloading, true);
+  assert.equal(h.calls.reloads.length, 1);
+  assert.equal(h.state.now, 15000);
+});
+
+test("a ten-second pre-dispatch timeout refunds the first reservation and permits a later healthy attempt", async () => {
+  let first = true;
+  const h = harness({ afterSessionWrite: ({ state }) => {
+    if (first) { first = false; state.now += 10001; }
+  } });
+  const timedOut = await h.request({ type: "reload-ad", resumeTime: 200 });
+  assert.equal(timedOut.reason, "timeout");
+  assert.equal(timedOut.reloadCount, 0);
+  assert.equal(timedOut.retryAfterMs, 3000);
+  assert.equal(h.calls.reloads.length, 0);
+  assert.equal(h.sessionData["ad-reload:7"], undefined);
+  h.state.now += 3000;
+  const healthy = await h.request({ type: "reload-ad" });
+  assert.equal(healthy.reloading, true);
+  assert.equal(healthy.reloadCount, 1);
+  assert.equal(h.calls.reloads.length, 1);
+});
+
+test("a pre-dispatch cancellation restores the earlier count and timestamp without resurrecting its resume payload", async () => {
+  const previous = reloadRecord({ lastReloadAt: 7000, sourceDocumentId: "previous-document",
+    resumeTime: 150, resumeExpiresAt: 70000, resumeDeliveredTo: "previous-recipient" });
+  for (const changed of [{ enabled: false }, { active: false }, { focused: false }, { adShowing: false }]) {
+    const h = harness({ sessionData: { "ad-reload:7": structuredClone(previous) },
+      afterSessionWrite: ({ state }) => Object.assign(state, changed) });
+    const reply = await h.request({ type: "reload-ad", resumeTime: 200 });
+    assert.equal(reply.ok, false);
+    assert.equal(reply.reloadCount, 1);
+    assert.equal(h.calls.reloads.length, 0);
+    assert.deepEqual(h.sessionData["ad-reload:7"], {
+      videoId: "video-a", sourceDocumentId: "previous-document", reloadCount: 1, lastReloadAt: 7000,
+    });
+  }
+});
+
+test("rollback never overwrites a newer reservation, another document, timestamp or video", async () => {
+  const replacements = [
+    reloadRecord({ sourceDocumentId: "new-document", reloadCount: 4, lastReloadAt: 10001, resumeTime: 300 }),
+    reloadRecord({ sourceDocumentId: "document-a", reloadCount: 4, lastReloadAt: 10000, resumeTime: 310 }),
+    reloadRecord({ sourceDocumentId: "document-a", lastReloadAt: 10001, resumeTime: 320 }),
+    reloadRecord({ videoId: "video-b", sourceDocumentId: "document-b", lastReloadAt: 10000, resumeTime: 330 }),
+  ];
+  for (const replacement of replacements) {
+    const h = harness({ afterSessionWrite: ({ state, sessionData }) => {
+      sessionData["ad-reload:7"] = structuredClone(replacement);
+      state.focused = false;
+    } });
+    const reply = await h.request({ type: "reload-ad", resumeTime: 200 });
+    assert.equal(reply.ok, false);
+    assert.equal(reply.reloadCount, replacement.videoId === "video-a" ? replacement.reloadCount : 0);
+    assert.deepEqual(h.sessionData["ad-reload:7"], replacement);
+    assert.equal(h.calls.sessionWrites.length, 1);
+    assert.equal(h.calls.sessionRemoves.length, 0);
+    assert.equal(h.calls.reloads.length, 0);
+  }
+});
+
+test("an uncertain storage write is not guessed to be refundable", async () => {
+  const h = harness({ afterSessionWrite: () => { throw new Error("Storage acknowledgement lost"); } });
+  const reply = await h.request({ type: "reload-ad", resumeTime: 200 });
+  assert.equal(reply.reason, "reload-state-unavailable");
+  assert.equal(reply.reloadCount, undefined);
+  assert.equal(h.sessionData["ad-reload:7"].reloadCount, 1);
+  assert.equal(h.sessionData["ad-reload:7"].resumeTime, 200);
+  assert.equal(h.calls.sessionWrites.length, 1);
+  assert.equal(h.calls.sessionRemoves.length, 0);
+  assert.equal(h.calls.reloads.length, 0);
+});
+
+test("failed rollback writes and removals conservatively retain the positively saved count", async () => {
+  const previous = reloadRecord({ sourceDocumentId: "previous-document", lastReloadAt: 7000 });
+  const restoreFailure = harness({ sessionData: { "ad-reload:7": previous },
+    afterSessionWrite: ({ state }) => { state.focused = false; },
+    sessionWriteError: ({ calls }) => calls.sessionWrites.length > 1 });
+  const restored = await restoreFailure.request({ type: "reload-ad" });
+  assert.equal(restored.reloadCount, 2);
+  assert.equal(restoreFailure.sessionData["ad-reload:7"].reloadCount, 2);
+  assert.equal(restoreFailure.calls.reloads.length, 0);
+  const removalFailure = harness({ sessionRemoveError: true,
+    afterSessionWrite: ({ state }) => { state.focused = false; } });
+  const removed = await removalFailure.request({ type: "reload-ad" });
+  assert.equal(removed.reloadCount, 1);
+  assert.equal(removalFailure.sessionData["ad-reload:7"].reloadCount, 1);
+  assert.equal(removalFailure.calls.reloads.length, 0);
+});
+
+test("valid pinned ad documents may reload and skip while unrelated resources keep the tab loading", async () => {
+  for (const type of ["reload-ad", "skip-ad"]) {
+    const h = harness({ state: { tab: { status: "loading", url: WATCH, pendingUrl: WATCH } } });
+    assert.equal((await h.request({ type })).ok, true);
+    assert.equal(h.calls.reloads.length, type === "reload-ad" ? 1 : 0);
+    assert.equal(h.calls.attach.length, type === "skip-ad" ? 1 : 0);
+  }
+});
+
+test("a different pending URL and a navigation beginning during a reload job remain blocked", async () => {
+  for (const type of ["reload-ad", "skip-ad"]) {
+    const h = harness({ state: { tab: { status: "loading", url: WATCH,
+      pendingUrl: "https://www.youtube.com/watch?v=other" } } });
+    assert.equal((await h.request({ type })).reason, "document-changed");
+    assert.equal(h.calls.reloads.length, 0);
+    assert.equal(h.calls.attach.length, 0);
+  }
+  const changed = harness({ beforeConfirm: ({ calls, events }) => {
+    if (calls.confirms.length === 2) events.updated.emit(7, { status: "loading", url: WATCH });
+  } });
+  const reply = await changed.request({ type: "reload-ad" });
+  assert.equal(reply.reason, "document-changed");
+  assert.equal(reply.reloadCount, 0);
+  assert.equal(changed.calls.reloads.length, 0);
+  assert.equal(changed.sessionData["ad-reload:7"], undefined);
 });

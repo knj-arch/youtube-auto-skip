@@ -52,6 +52,7 @@ function harness(options = {}) {
   const window = eventTarget();
   const chrome = {
     runtime: {
+      getManifest: () => ({ version: "1.0.4" }),
       id: "own-extension", onMessage: { addListener: fn => runtimeListeners.push(fn) },
       sendMessage(message) {
         calls.push(JSON.parse(JSON.stringify(message)));
@@ -117,6 +118,12 @@ function harness(options = {}) {
     maxReloads(value) {
       for (const fn of storageListeners) fn({ maxReloads: { newValue: value } }, "local");
     },
+    diagnose(senderId = "own-extension") {
+      let reply;
+      for (const fn of runtimeListeners) fn({ type: "automation-content-status" },
+        { id: senderId }, value => { reply = value; });
+      return reply;
+    },
     confirm(requireAd = false) {
       let reply;
       for (const fn of runtimeListeners) fn({ type: "confirm-skip-document", url: href, requireAd },
@@ -161,7 +168,7 @@ test("storage failure falls back to skipping instead of unguarded refreshes", as
 
 test("inactive replies can retry on focus return without a tight reload loop", async () => {
   let attempts = 0;
-  const h = harness({ reloadReply: () => ++attempts === 1 ?
+  const h = harness({ button: false, reloadReply: () => ++attempts === 1 ?
     { ok: false, reason: "inactive" } : { ok: true, reloading: true } });
   await h.advance(1000);
   assert.equal(attempts, 1);
@@ -494,9 +501,74 @@ test("a retry response from the previous SPA video cannot override the current v
 });
 
 test("an uncertain reload-ad response does not enable extra refreshes using an unverified old count", async () => {
-  const h = harness({ reloadReply: () => Promise.reject(new Error("Reload response channel closed")) });
+  let persistedCount = 0;
+  const h = harness({ reloadState: () => ({ ok: true, reloadCount: persistedCount }),
+    reloadReply: () => { persistedCount += 1; return Promise.reject(new Error("Reload response channel closed")); } });
   await h.advance(10000);
-  assert.equal(h.actions().filter(message => message.type === "reload-ad").length, 1);
-  assert.equal(h.calls.filter(message => message.type === "ad-reload-state").length, 1);
+  assert.equal(h.actions().filter(message => message.type === "reload-ad").length, 3);
+  assert.ok(h.calls.filter(message => message.type === "ad-reload-state").length >= 3);
   assert.ok(h.actions().some(message => message.type === "skip-ad"));
+  await h.advance(30000);
+  assert.equal(h.actions().filter(message => message.type === "reload-ad").length, 3);
+  assert.equal(h.calls.filter(message => message.type === "ad-reload-state").length, 4);
+});
+
+test("transient reload failures recover after a delayed persisted-state read without toggling", async () => {
+  for (const reason of ["timeout", "failed", "reload-state-unavailable", "ad-not-showing", "busy",
+    "inactive", "document-changed", "disabled"]) {
+    let attempts = 0;
+    const h = harness({ button: false, reloadReply: () => ++attempts === 1 ?
+      { ok: false, reason, reloadCount: 0 } : { ok: true, reloading: true, reloadCount: 1 } });
+    await h.advance(200);
+    assert.equal(attempts, 1);
+    assert.equal(h.diagnose().lastResult.reason, reason);
+    assert.equal(h.diagnose().state.ready, false);
+    await h.advance(2800);
+    assert.equal(attempts, 1);
+    await h.advance(1300);
+    assert.equal(attempts, 2);
+    assert.equal(h.calls.filter(message => message.type === "ad-reload-state").length, 2);
+  }
+});
+
+test("an uncertain refund response cannot leave a healthy page stuck at a stale exhausted budget", async () => {
+  let attempts = 0;
+  const h = harness({ button: false, reloadState: () => ({ ok: true, reloadCount: 2 }),
+    reloadReply: () => ++attempts === 1 ? { ok: false, reason: "inactive", reloadCount: 3 } :
+      { ok: true, reloading: true, reloadCount: 3 } });
+  await h.advance(200);
+  assert.equal(h.diagnose().state.reloadCount, 3);
+  assert.equal(h.diagnose().state.ready, false);
+  await h.advance(4000);
+  assert.equal(attempts, 2);
+  assert.equal(h.calls.filter(message => message.type === "ad-reload-state").length, 2);
+});
+
+test("a missing reload response cannot bypass an unreadable persisted count", async () => {
+  let reads = 0;
+  const h = harness({ button: false, reloadState: () => ++reads === 1 ?
+    { ok: true, reloadCount: 0 } : { ok: false, reason: "reload-state-unavailable" },
+    reloadReply: () => undefined });
+  await h.advance(30000);
+  assert.equal(h.actions().filter(message => message.type === "reload-ad").length, 1);
+  assert.ok(reads >= 5);
+  assert.equal(h.diagnose().state.ready, false);
+});
+
+test("diagnostics are read-only, omit viewing identifiers, and retain the pre-popup foreground sample", async () => {
+  const h = harness({ button: false, reloadCount: 3 });
+  await h.advance(200);
+  const before = h.calls.length;
+  h.state.focused = false;
+  const snapshot = h.diagnose();
+  assert.equal(snapshot.build, "1.0.4");
+  assert.equal(snapshot.adPlayers, 1);
+  assert.equal(snapshot.state.reloadCount, 3);
+  assert.equal(snapshot.focused, false);
+  assert.equal(snapshot.lastForeground.focused, true);
+  assert.equal(snapshot.lastForeground.adPlayers, 1);
+  assert.equal(h.calls.length, before);
+  assert.equal(JSON.stringify(snapshot).includes("video-a"), false);
+  assert.equal(JSON.stringify(snapshot).includes("https://"), false);
+  assert.equal(h.diagnose("unrelated-extension"), undefined);
 });

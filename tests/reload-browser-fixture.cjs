@@ -26,13 +26,14 @@ function silentWav(seconds = 10) {
 }
 const media = silentWav();
 
-function fixtureHtml({ ad, button }) {
+function fixtureHtml({ ad, button, pendingImage }) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>Local ad-flow fixture</title>
     <style>body{margin:0;background:#fff}.html5-video-player{position:relative;width:640px;height:360px}
     video{width:640px;height:360px}button{position:absolute;right:20px;bottom:30px;width:140px;height:44px}</style>
     </head><body><div class="html5-video-player ${ad ? "ad-showing" : ""}">
     <video class="html5-main-video" preload="auto" src="${media}"></video>
     ${button ? '<button class="ytp-skip-ad-button">Skip ad</button>' : ""}</div>
+    ${pendingImage ? '<img src="/fixture-pending.png" width="1" height="1">' : ""}
     <script>
       window.fixtureClicks=[];
       const button=document.querySelector('button');
@@ -63,6 +64,7 @@ async function eventually(check, description, timeout = 7000) {
   for (const name of ["content.js", "background.js", "popup.js", "popup.html", "popup.css", "manifest.json"]) {
     sourceHashes[name] = crypto.createHash("sha256").update(await fs.readFile(path.join(extensionRoot, name))).digest("hex");
   }
+  const expectedVersion = JSON.parse(await fs.readFile(path.join(extensionRoot, "manifest.json"), "utf8")).version;
   try {
     context = await chromium.launchPersistentContext(profile, {
       executablePath: process.env.FIXTURE_CHROMIUM_PATH || undefined,
@@ -88,12 +90,15 @@ async function eventually(check, description, timeout = 7000) {
       });
       return chrome.storage.local.set({ enabled: true });
     });
-    let scenario = { startMain: false, firstButton: false, reloadsBeforeButton: 3,
+    let scenario = { startMain: false, firstButton: false, reloadsBeforeButton: 3, pendingImage: false,
       loads: new Map(), loadTimes: new Map() };
     await context.route("**/*", route => {
       const url = new URL(route.request().url());
       if (url.protocol === "chrome-extension:") return route.continue();
       if (url.origin !== "https://www.youtube.com") return route.abort();
+      // Leave this locally intercepted request unresolved. DOMContentLoaded
+      // completes, but Chrome's real tab.status remains "loading".
+      if (url.pathname === "/fixture-pending.png") return;
       const id = url.searchParams.get("v") || url.pathname;
       const count = (scenario.loads.get(id) || 0) + 1;
       scenario.loads.set(id, count);
@@ -102,13 +107,14 @@ async function eventually(check, description, timeout = 7000) {
       scenario.loadTimes.set(id, times);
       return route.fulfill({ contentType: "text/html", body: fixtureHtml({
         ad: !(scenario.startMain && count === 1),
-        button: scenario.firstButton || count > scenario.reloadsBeforeButton
+        button: scenario.firstButton || count > scenario.reloadsBeforeButton,
+        pendingImage: scenario.pendingImage
       }) });
     });
     const messages = () => worker.evaluate(() => self.fixtureMessages || []);
     const reset = async options => {
       for (const page of context.pages()) await page.close();
-      scenario = { startMain: false, firstButton: false, reloadsBeforeButton: 3,
+      scenario = { startMain: false, firstButton: false, reloadsBeforeButton: 3, pendingImage: false,
         loads: new Map(), loadTimes: new Map(), ...options };
       await worker.evaluate(() => { self.fixtureMessages = []; });
       return context.newPage();
@@ -192,10 +198,53 @@ async function eventually(check, description, timeout = 7000) {
       assert.ok(requests[1].at - requests[0].at >= 2950,
         "Initial state lookup was retried before its 3-second recovery delay");
     };
+    const injectDelayedCalls = async (tabId, videoId, confirmationMs, writeMs) => worker.evaluate(options => {
+      const originalSend = chrome.tabs.sendMessage;
+      const originalSet = chrome.storage.session.set;
+      const key = "ad-reload:" + options.tabId;
+      self.fixtureDelay = { confirmation: {}, write: {}, options };
+      const delayed = (value, duration, record) => new Promise(resolve => {
+        setTimeout(() => { record.resolvedAt = Date.now(); resolve(value); }, duration);
+      });
+      chrome.tabs.sendMessage = function (...args) {
+        if (options.confirmationMs && args[0] === options.tabId &&
+            args[1]?.type === "confirm-skip-document" && args[1].requireAd === true) {
+          chrome.tabs.sendMessage = originalSend;
+          const entry = self.fixtureDelay.confirmation;
+          entry.startedAt = Date.now();
+          return Promise.resolve(originalSend.apply(this, args)).then(value => {
+            entry.originalResolvedAt = Date.now();
+            return delayed(value, options.confirmationMs, entry);
+          });
+        }
+        return originalSend.apply(this, args);
+      };
+      chrome.storage.session.set = function (...args) {
+        if (options.writeMs && args[0]?.[key]?.videoId === options.videoId) {
+          chrome.storage.session.set = originalSet;
+          const entry = self.fixtureDelay.write;
+          entry.startedAt = Date.now();
+          return Promise.resolve(originalSet.apply(this, args)).then(value => {
+            entry.committedAt = Date.now();
+            return delayed(value, options.writeMs, entry);
+          });
+        }
+        return originalSet.apply(this, args);
+      };
+      self.fixtureRestoreDelay = () => {
+        chrome.tabs.sendMessage = originalSend;
+        chrome.storage.session.set = originalSet;
+        delete self.fixtureRestoreDelay;
+      };
+    }, { tabId, videoId, confirmationMs, writeMs });
+    const restoreDelayedCalls = async () => worker.evaluate(() => {
+      if (self.fixtureRestoreDelay) self.fixtureRestoreDelay();
+      return self.fixtureDelay;
+    });
 
     let popup = await openPopup();
-    await eventually(async () => (await popup.locator("#version").textContent()).includes("1.0.3"),
-      "Popup did not display the current 1.0.3 extension version");
+    await eventually(async () => (await popup.locator("#version").textContent()).includes(expectedVersion),
+      "Popup did not display the current extension version");
     await popup.setViewportSize({ width: 352, height: 600 });
     const popupLayout = await popup.evaluate(() => ({
       viewportWidth: innerWidth, viewportHeight: innerHeight,
@@ -205,14 +254,14 @@ async function eventually(check, description, timeout = 7000) {
       updateHintBottom: document.querySelector(".update-hint").getBoundingClientRect().bottom
     }));
     await fs.mkdir(path.join(extensionRoot, "dist"), { recursive: true });
-    await popup.screenshot({ path: path.join(extensionRoot, "dist", "popup-1.0.3.png") });
+    await popup.screenshot({ path: path.join(extensionRoot, "dist", `popup-${expectedVersion}.png`) });
     console.log("POPUP_LAYOUT " + JSON.stringify(popupLayout));
     assert.equal(await popup.locator("#max-reloads").inputValue(), "3");
     assert.equal(await popup.locator("#max-reloads").getAttribute("min"), "1");
     assert.equal(await popup.locator("#max-reloads").getAttribute("max"), "10");
     assert.equal(await savedLimit(), undefined);
     await popup.close();
-    record("popup shows version 1.0.3, the default limit of 3 and the supported range 1 through 10");
+    record(`popup shows version ${expectedVersion}, the default limit of 3 and the supported range 1 through 10`);
 
     let page = await reset();
     await go(page, "watch?v=fixture-default");
@@ -347,6 +396,74 @@ async function eventually(check, description, timeout = 7000) {
     }
     record("state recovery preserves an exhausted persisted budget and skips without another reload");
 
+    page = await reset({ reloadsBeforeButton: 1, pendingImage: true });
+    await setLimitThroughPopup(1);
+    tabId = await currentOnlyTabId();
+    await worker.evaluate(id => {
+      const original = chrome.tabs.get;
+      self.fixtureLoadingChecks = [];
+      chrome.tabs.get = function (...args) {
+        return original.apply(this, args).then(tab => {
+          if (args[0] === id) self.fixtureLoadingChecks.push({ at: Date.now(), active: tab.active, status: tab.status });
+          return tab;
+        });
+      };
+      self.fixtureRestoreTabGet = () => { chrome.tabs.get = original; delete self.fixtureRestoreTabGet; };
+    }, tabId);
+    try {
+      await go(page, "watch?v=fixture-loading");
+      await waitForSkip(page, "fixture-loading", 1);
+      const tab = await worker.evaluate(id => chrome.tabs.get(id), tabId);
+      assert.equal(tab.status, "loading");
+      assert.ok(await worker.evaluate(() => self.fixtureLoadingChecks.some(item => item.active && item.status === "loading")));
+      assert.equal(scenario.loads.get("fixture-loading"), 2);
+    } finally {
+      await worker.evaluate(() => { if (self.fixtureRestoreTabGet) self.fixtureRestoreTabGet(); });
+    }
+    record("a real Chrome tab kept loading by an unresolved image still reloads and skips a confirmed ad");
+
+    page = await reset({ reloadsBeforeButton: 1 });
+    await setLimitThroughPopup(1);
+    tabId = await currentOnlyTabId();
+    await injectDelayedCalls(tabId, "fixture-slow-apis", 2500, 2500);
+    try {
+      await go(page, "watch?v=fixture-slow-apis");
+      await waitForSkip(page, "fixture-slow-apis", 1);
+      const delay = await restoreDelayedCalls();
+      assert.ok(delay.confirmation.resolvedAt - delay.confirmation.originalResolvedAt >= 2490);
+      assert.ok(delay.write.resolvedAt - delay.write.committedAt >= 2490);
+      assert.ok(delay.write.resolvedAt - delay.confirmation.startedAt >= 4990);
+      assert.equal(scenario.loads.get("fixture-slow-apis"), 2);
+    } finally {
+      await restoreDelayedCalls();
+    }
+    record("2.5-second confirmation plus 2.5-second guard acknowledgment delay remains within the reload deadline");
+
+    page = await reset({ reloadsBeforeButton: 1 });
+    await setLimitThroughPopup(1);
+    tabId = await currentOnlyTabId();
+    await injectDelayedCalls(tabId, "fixture-refund", 0, 2500);
+    try {
+      await go(page, "watch?v=fixture-refund");
+      await eventually(() => worker.evaluate(() => Boolean(self.fixtureDelay.write.committedAt)),
+        "Guard reservation was not committed before cancellation");
+      await page.evaluate(() => document.querySelector(".html5-video-player").classList.remove("ad-showing"));
+      await eventually(async () => {
+        const records = await worker.evaluate(() => chrome.storage.session.get(null));
+        const running = await worker.evaluate(id => jobs.has(id), tabId);
+        return !running && !records["ad-reload:" + tabId];
+      }, "Cancelled undispatched reload did not refund its committed reservation", 7000);
+      assert.equal(scenario.loads.get("fixture-refund"), 1);
+      await page.evaluate(() => document.querySelector(".html5-video-player").classList.add("ad-showing"));
+      await waitForSkip(page, "fixture-refund", 1);
+      const records = await worker.evaluate(() => chrome.storage.session.get(null));
+      assert.equal(records["ad-reload:" + tabId].reloadCount, 1);
+      assert.equal(scenario.loads.get("fixture-refund"), 2);
+    } finally {
+      await restoreDelayedCalls();
+    }
+    record("an undispatched cancellation refunds its budget and the next ad reloads automatically without toggling");
+
     await worker.evaluate(() => chrome.storage.local.set({ enabled: false }));
     page = await reset({ firstButton: true });
     await go(page, "watch?v=fixture-disabled");
@@ -354,6 +471,45 @@ async function eventually(check, description, timeout = 7000) {
     assert.equal(scenario.loads.get("fixture-disabled"), 1);
     assert.equal((await messages()).filter(item => ["reload-ad", "skip-ad"].includes(item.type)).length, 0);
     record("disabled setting prevents refresh and skip");
+
+    const sessionBeforeDiagnosis = await worker.evaluate(() => chrome.storage.session.get(null));
+    const actionsBeforeDiagnosis = (await messages()).filter(item => ["reload-ad", "skip-ad"].includes(item.type)).length;
+    popup = await openPopup();
+    await page.bringToFront();
+    // A browser-action popup leaves its host tab active. This background
+    // extension-page click reproduces that tab selection without clipboard I/O.
+    await popup.locator("#diagnostic-check").evaluate(button => button.click());
+    let diagnosis;
+    await eventually(async () => {
+      try { diagnosis = JSON.parse(await popup.locator("#diagnostic-report").inputValue()); }
+      catch { return false; }
+      return diagnosis.ok === true && diagnosis.content?.connected === true;
+    }, "The real diagnostic popup did not connect to the active content script");
+    assert.equal(diagnosis.version, expectedVersion);
+    assert.equal(diagnosis.enabled, false);
+    // Chrome can omit tab.url without the broad tabs permission. The pinned
+    // content reply still establishes that this is a supported watch page.
+    assert.ok([true, null].includes(diagnosis.page.supported));
+    assert.equal(diagnosis.content.supported, true);
+    assert.equal(diagnosis.content.enabled, false);
+    const reportText = await popup.locator("#diagnostic-report").inputValue();
+    assert.ok(!reportText.includes("v=fixture-"), "Diagnostic output exposed the viewing query");
+    await fs.writeFile(path.join(extensionRoot, "dist", `browser-diagnostic-${expectedVersion}.json`),
+      JSON.stringify(diagnosis, null, 2));
+    // Observe the copy-handler payload without replacing the user's OS clipboard.
+    await popup.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+        writeText: async value => { window.fixtureCopiedReport = value; }
+      } });
+    });
+    await popup.locator("#diagnostic-copy").evaluate(button => button.click());
+    await eventually(async () => await popup.evaluate(() => window.fixtureCopiedReport) === reportText,
+      "Diagnostic copy handler did not receive the sanitized report");
+    assert.equal(await popup.locator("#diagnostic-copy-status").textContent(), "복사했어요.");
+    assert.deepEqual(await worker.evaluate(() => chrome.storage.session.get(null)), sessionBeforeDiagnosis);
+    assert.equal((await messages()).filter(item => ["reload-ad", "skip-ad"].includes(item.type)).length, actionsBeforeDiagnosis);
+    await popup.close();
+    record("the real diagnostic popup reads and copies sanitized content state without changing automation or session data");
 
     await worker.evaluate(() => chrome.storage.local.set({ enabled: true }));
     page = await reset({ firstButton: true });
@@ -376,7 +532,11 @@ async function eventually(check, description, timeout = 7000) {
     assert.equal(await page.evaluate(() => window.fixtureClicks.length), 0);
     record("background tab prevents refresh and skip");
 
-    console.log(JSON.stringify({ checksPassed: checks, sourceHashes,
+    for (const [name, expectedHash] of Object.entries(sourceHashes)) {
+      assert.equal(crypto.createHash("sha256").update(await fs.readFile(path.join(extensionRoot, name))).digest("hex"),
+        expectedHash, "Source changed during browser verification: " + name);
+    }
+    console.log(JSON.stringify({ checksPassed: checks, sourceHashes, sourceUnchanged: true,
       source: "isolated real Chromium + real extension worker + synthetic local fixtures", realYouTubeAdTest: false }));
   } finally {
     if (context) await context.close();
