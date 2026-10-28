@@ -37,7 +37,21 @@
   SHA256 FF36AE70637B0785ACD9478FD599AB64E4D27144AF4A6E1FDAC182583736C3B6
 • 기존 1.0.4.7 심사는 검증된 1.0.5로 교체하기 위해 취소
   읽기 전용 API 실행 40651671700, 2026-10-28T07:41:17.978Z / 16:41:17(KST): CANCELLED
-  기존 게시 버전 1.0.1/PUBLISHED_TO_TESTERS 유지. 1.0.5 새 제출·Release 공개는 이 기록 시점 준비 중
+  기존 게시 버전 1.0.1/PUBLISHED_TO_TESTERS 유지
+• 1.0.5 공개 Release 및 로그인 없는 ZIP 다운로드 검증 완료: 24,905바이트, 위 SHA256 일치
+  https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.5
+• 소스 커밋 02dc7e34b7fe495f4812f26ea3ab30a220c46eca, CI 실행 40652243402 / 번호 8 SUCCESS
+  strict 타입·생성물 검사와 Node 142/142 통과 후 1.0.5.8 업로드·심사 접수 완료
+  접수 로그: 2026-10-28T07:47:01.9482521Z / 16:47:01(KST), PENDING_REVIEW
+  CI ZIP 25,038바이트, SHA256 CE027B41DE72582959AD4CD4222C42E981EEC079E6AB3917E616543C94D9EDC2
+  runtime 10개는 manifest.version·manifest JSON 서식·텍스트 줄바꿈 외에 검증한 소스와 일치
+• 최종 읽기 전용 API 실행 40652780354 SUCCESS, checkedAtUtc=2026-10-28T07:51:39.996Z
+  16:51:39(KST) 게시 1.0.1/PUBLISHED_TO_TESTERS, 제출 1.0.5.8/PENDING_REVIEW
+  warned=false, takenDown=false. 새 버전 승인·게시는 아직 완료되지 않음
+• Pages 실행 40652243497 SUCCESS, 공개 HTTPS HTTP 200과 1.0.5·진단 정책 확인
+• 작업 PC의 실제 Chrome에서 해당 unpacked 확장을 다시 로드한 뒤 버전 1.0.5·켜짐·최대 3회 확인
+  다른 PC의 새 버전 적용·동작 확인과 구분
+• 스토어의 기존 1.0.4 기능 설명·심사 안내 유지. 비활성화된 심사 안내 필드는 수정하지 못했으며 1.0.5 저장으로 기록하지 않음
 • 권한·데이터 범위 변경 없음. 1.0.4의 다른 PC 작동은 사용자 확인, 1.0.5와 구분
 • 아래는 이전 1.0.4 및 그 이전 버전의 상세 이력
 

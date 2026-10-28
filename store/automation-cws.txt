@@ -5,23 +5,23 @@ Git push → Chrome 웹 스토어 자동 제출 설정
 GitHub Pages 개인정보 페이지는 별도 Pages 워크플로에서 갱신합니다.
 Google 심사 시간은 push 시점과 별개입니다.
 
-적용 소스: 버전 1.0.4
-실제 스토어 제출 버전: 1.0.4.7 (GitHub Actions 실행 번호 7)
+적용 소스 및 수동 설치용 공개 Release: 버전 1.0.5
+실제 스토어 제출 버전: 1.0.5.8 (GitHub Actions 실행 번호 8)
 
-최신 배포·심사 상태 — 2026-10-28 15:45:28(KST) 확인
+최신 배포·심사 상태 — 2026-10-28 16:51:39(KST) 확인
 
   게시 버전 1.0.1: PUBLISHED_TO_TESTERS
-  제출 버전 1.0.4.7: PENDING_REVIEW
+  제출 버전 1.0.5.8: PENDING_REVIEW
   warned=false, takenDown=false
 
-1.0.4.7은 업로드·심사 접수까지 완료됐으며 승인·게시 완료 상태는 아닙니다.
+1.0.5.8은 업로드·심사 접수까지 완료됐으며 승인·게시 완료 상태는 아닙니다.
 현재 스토어에서 설치되는 게시 버전은 기존 1.0.1의 비공개 테스터 배포입니다.
 새 버전은 승인 후 같은 범위로 자동 게시됩니다. 바로 수동 설치할 수 있는
-소스 버전 1.0.4 ZIP은 아래 GitHub 공개 릴리스에서 별도로 제공합니다.
+소스 버전 1.0.5 ZIP은 아래 GitHub 공개 릴리스에서 별도로 제공합니다.
 
 읽기 전용 상태 확인 실행:
-  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645777286
-  결과 SUCCESS, 조회 시각 2026-10-28T06:45:28.842Z / 15:45:28.842(KST)
+  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40652780354
+  결과 SUCCESS, 조회 시각 2026-10-28T07:51:39.996Z / 16:51:39.996(KST)
 이 워크플로는 fetchStatus GET만 호출하며 업로드·게시·취소하지 않습니다.
 
 현재 연결 및 제출 증거
@@ -32,36 +32,56 @@ GitHub OIDC / Workload Identity Federation(WIF)와 전용 서비스 계정 연�
 만들거나 저장하지 않았습니다. 전용 Cloud 프로젝트에는 결제 계정을 연결하지 않았습니다.
 
 배포 대상 소스 커밋:
-  87ad6a0a06b6838938669b89766ecf29c1cbffe2
+  02dc7e34b7fe495f4812f26ea3ab30a220c46eca
 성공한 Actions 실행:
-  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645624815
+  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40652243402
 
-위 실행은 Node 검증 133/133을 통과하고 단기 인증으로 ZIP을
+위 실행은 strict 타입 검사와 Node 검증 142/142를 통과하고 단기 인증으로 ZIP을
 업로드한 뒤 심사 제출까지 완료했습니다. API 응답은 다음과 같습니다.
-  Version 1.0.4.7 submission accepted. Store state: PENDING_REVIEW
-접수 확인 시각: 2026-10-28T06:44:17.1556202Z / 15:44:17.1556202(KST)
+  Version 1.0.5.8 submission accepted. Store state: PENDING_REVIEW
+접수 확인 시각: 2026-10-28T07:47:01.9482521Z / 16:47:01.9482521(KST)
 
-CI ZIP의 runtime 파일 10개는 manifest.version 및 줄바꿈 차이를 제외하면
-검증한 소스와 일치합니다. CI ZIP SHA256:
-  E847263CD28B4C64F50FBE698B61945F03E9C8C6A06070C93DCC6002621A1833
-별도 수동 설치용 소스 1.0.4 ZIP:
-  https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.4
-  파일 크기 25,018바이트, 로그인 없는 실제 다운로드 검증 완료
-  SHA256: 632278B06BFCAEC9CDE330FB5CA75E59791D758BDFD51447EE8F8C2BA7EC309C
-수동 설치 파일은 소스 버전 1.0.4이며 심사 중인 스토어 패키지는 1.0.4.7입니다.
+CI ZIP의 runtime 파일 10개는 manifest.version·manifest JSON 서식·텍스트
+줄바꿈 차이를 제외하면 검증한 소스와 일치합니다. 파일 크기는 25,038바이트입니다.
+CI ZIP SHA256:
+  CE027B41DE72582959AD4CD4222C42E981EEC079E6AB3917E616543C94D9EDC2
+별도 수동 설치용 소스 1.0.5 ZIP:
+  https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.5
+  https://github.com/knj-arch/youtube-auto-skip/releases/download/v1.0.5/youtube-auto-skip-1.0.5.zip
+  파일 크기 24,905바이트, 로그인 없는 실제 다운로드 및 해시 일치 검증 완료
+  SHA256: FF36AE70637B0785ACD9478FD599AB64E4D27144AF4A6E1FDAC182583736C3B6
+수동 설치 파일은 소스 버전 1.0.5이며 심사 중인 스토어 패키지는 1.0.5.8입니다.
 
 개인정보 페이지 실행:
-  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645624934
-  SUCCESS, 공개 HTTPS HTTP 200 및 1.0.4 진단·임시 상태 정책 반영 확인
-실제 Aside 개발자 대시보드에도 1.0.4 설명과 테스트 안내 저장을 확인했습니다.
+  https://github.com/knj-arch/youtube-auto-skip/actions/runs/40652243497
+  SUCCESS, 공개 HTTPS HTTP 200 및 1.0.5·진단 정책 문구 반영 확인
 
-1.0.4 검증 범위
+1.0.5 검증 범위
 
-최종 소스는 Node 133/133과 격리 Chromium 통합 16/16을 통과했습니다.
-실제 YouTube 광고에서 자동 새로고침 세 번 후 본영상으로 전환되어
-1.776601초까지 진행하는 것을 확인했습니다. 실제 1.0.4 광고의 건너뛰기
-버튼 경로와 중간 광고 재생 위치 복원, 다른 PC에서의 작동은 관찰하지
-못했습니다. 실제 관찰과 합성 페이지의 통합 검증을 구분합니다.
+최종 소스는 strict 타입 검사와 Node 142/142, 격리 Chromium 통합 19/19를
+통과했습니다. 로컬 합성 페이지에서 CSS 전환·애니메이션 뒤 표시되는 버튼의
+trusted 클릭과 무관한 애니메이션 중 숨겨진 버튼을 누르지 않는 경로도 확인했습니다.
+실제 YouTube 광고 관찰은 2026-10-28 16:39:11~16:39:34(KST)에 진행했습니다.
+15.041초 광고→새로고침→15.041초 광고→새로고침→6.041초 광고→새로고침 뒤
+223.381초 본영상이 1.973226초까지 진행했습니다. 실제 새로고침·요청·저장 횟수는
+모두 3이며 저장된 시도 간격은 3,317ms와 3,303ms였습니다. 외부 입력이나 인위적인
+세션 시드는 없었습니다. 실제 1.0.5 광고의 건너뛰기 버튼 경로와 중간 광고 재생
+위치 복원은 관찰하지 못했습니다. 실제 관찰과 합성 페이지의 통합 검증을 구분합니다.
+
+기존 1.0.4와 최종 1.0.5를 같은 합성 페이지에서 조건별 24회 비교한
+DOM 변경→worker 요청 수신 지연 p50/p95/최대값(ms)은 다음과 같습니다.
+  기존 플레이어의 광고 상태 변경: 85/93/100 → 2/3/3
+  새 플레이어 삽입: 570/1042/1094 → 5/7/7
+  플레이어 교체: 593/1052/1085 → 4/5/6
+실제 광고가 끝나거나 본영상이 시작되는 시간의 측정은 아닙니다. 무관한 span
+4,000개 삽입·삭제 검사에서는 오탐 요청이 없었지만 renderer TaskDuration
+중앙값은 16.223→30.637ms로 증가했습니다. 페이지의 테스트 작업을 포함하므로
+확장 전용 CPU 사용량은 아닙니다. 원시 결과와 범위는 store/verification.txt에 기록합니다.
+
+이 PC의 기존 압축해제 확장을 다시 로드해 팝업 버전 1.0.5·켜짐·최대 3회를
+확인했습니다. 이 로컬 적용 확인은 다른 PC에서의 작동 확인을 대신하지 않습니다.
+
+1.0.4부터 유지하는 복구·진단 동작
 
 1.0.4는 새로고침 처리 제한 시간을 10초로 늘리고 클릭은 2초를 유지합니다.
 새로고침 API를 호출하지 못한 것이 확실한 자체 예약은 안전하게 환불하며,
@@ -73,6 +93,19 @@ CI ZIP의 runtime 파일 10개는 manifest.version 및 줄바꿈 차이를 제�
 
 이전 제출 이력
 
+  1.0.4.7: 1.0.5로 교체하기 위해 취소했습니다.
+    취소 확인 실행 https://github.com/knj-arch/youtube-auto-skip/actions/runs/40651671700
+    2026-10-28T07:41:17.978Z / 16:41:17.978(KST), CANCELLED 확인
+    이전 배포 소스 87ad6a0a06b6838938669b89766ecf29c1cbffe2
+    제출 실행 https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645624815
+    2026-10-28T06:44:17.1556202Z / 15:44:17.1556202(KST), 심사 접수 완료
+    이전 조회 40645777286에서 15:45:28(KST), PENDING_REVIEW 확인
+    Node 133/133·격리 Chromium 16/16 및 실제 광고 세 번 새로고침 뒤
+    본영상 1.776601초 재생을 확인했으며 실제 skip·중간 광고 복원은 미관찰입니다.
+    이전 CI ZIP SHA256: E847263CD28B4C64F50FBE698B61945F03E9C8C6A06070C93DCC6002621A1833
+    수동 1.0.4 ZIP 25,018바이트와 공개 릴리스, Pages 실행 40645624934,
+    실제 개발자 대시보드의 1.0.4 설명·테스트 안내 저장도 당시 확인했습니다.
+    수동 ZIP SHA256: 632278B06BFCAEC9CDE330FB5CA75E59791D758BDFD51447EE8F8C2BA7EC309C
   1.0.3.6: 심사 접수 후 1.0.4로 교체하기 위해 취소했습니다.
     취소 확인 실행 https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645367291
     2026-10-28T06:41:27.912Z / 15:41:27.912(KST), CANCELLED 확인
@@ -230,7 +263,7 @@ OAuth fallback 방식에만 필요한 Secrets:
 기존처럼 코드를 고치고 main에 push합니다. Actions의
 Extension package and store submission에서 ZIP과 제출 결과를 확인하세요.
 Actions 실행본에서만 manifest.version에 실행 번호가 붙습니다.
-이번 제출: 소스 1.0.4 + workflow run number 7 → 스토어 버전 1.0.4.7
+이번 제출: 소스 1.0.5 + workflow run number 8 → 스토어 버전 1.0.5.8
 로컬 소스 manifest와 Git 기록은 자동 버전 처리로 바뀌지 않습니다.
 확장 코드/아이콘/패키징/배포 스크립트 변경이 이 워크플로를 실행합니다.
 README나 개인정보 페이지 변경은 스토어 버전을 새로 제출하지 않습니다.

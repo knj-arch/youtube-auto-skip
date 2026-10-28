@@ -2,20 +2,20 @@
   "extension_name": "유튜브 자동 건너뛰기",
   "extension_id": "oilfjmphaeclhghjdiflbolddhdokimh",
   "publisher_id": "1c3467ca-1ed5-46e9-b508-4f6bc1e03a60",
-  "source_version": "1.0.4",
-  "submitted_version": "1.0.4.7",
+  "source_version": "1.0.5",
+  "submitted_version": "1.0.5.8",
   "submitted_on": "2026-10-28",
   "confirmed_status": "PENDING_REVIEW",
   "confirmed_status_label": "검토 대기 중",
-  "confirmed_at_utc": "2026-10-28T06:45:28.842Z",
+  "confirmed_at_utc": "2026-10-28T07:51:39.996Z",
   "confirmation_source": "Read-only Chrome Web Store API v2 fetchStatus in GitHub Actions",
   "latest_status_check": {
-    "workflow_run_id": "40645777286",
-    "workflow_url": "https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645777286",
-    "checked_at_kst": "2026-10-28 15:45:28 KST",
+    "workflow_run_id": "40652780354",
+    "workflow_url": "https://github.com/knj-arch/youtube-auto-skip/actions/runs/40652780354",
+    "checked_at_kst": "2026-10-28 16:51:39 KST",
     "published_version": "1.0.1",
     "published_state": "PUBLISHED_TO_TESTERS",
-    "submitted_version": "1.0.4.7",
+    "submitted_version": "1.0.5.8",
     "submitted_state": "PENDING_REVIEW",
     "taken_down": false,
     "warned": false
@@ -26,18 +26,22 @@
     "debugger"
   ],
   "package": {
-    "version": "1.0.4.7",
-    "sha256": "E847263CD28B4C64F50FBE698B61945F03E9C8C6A06070C93DCC6002621A1833",
+    "version": "1.0.5.8",
+    "bytes": 25038,
+    "sha256": "CE027B41DE72582959AD4CD4222C42E981EEC079E6AB3917E616543C94D9EDC2",
     "runtime_files": 10,
     "matches_verified_source": true,
     "allowed_differences": [
       "manifest.version",
+      "manifest JSON formatting",
       "text line endings"
     ]
   },
   "verification": {
-    "node_checks_passed": 133,
-    "browser_fixture_checks_passed": 16,
+    "strict_typecheck_passed": true,
+    "generated_runtime_check_passed": true,
+    "node_checks_passed": 142,
+    "browser_fixture_checks_passed": 19,
     "live_ad_reload_to_main_confirmed": true,
     "live_successes": 1,
     "configured_max_reloads": 3,
@@ -45,34 +49,94 @@
     "live_reload_requests": 3,
     "live_persisted_reload_count": 3,
     "live_reload_intervals_ms": [
-      3081,
-      3032
+      3317,
+      3303
     ],
     "ad_durations_seconds": [
-      50.081,
       15.041,
-      15.021
+      15.041,
+      6.041
     ],
     "main_video_seconds": 223.381,
-    "main_playback_observed_seconds": 1.776601,
-    "live_observed_from_utc": "2026-10-28T06:34:15.986Z",
-    "live_observed_until_utc": "2026-10-28T06:34:37.943Z",
+    "main_playback_observed_seconds": 1.973226,
+    "live_observed_from_utc": "2026-10-28T07:39:11.913Z",
+    "live_observed_until_utc": "2026-10-28T07:39:34.609Z",
     "external_reload_or_skip_input": false,
     "guard_seeded": false,
     "live_skip_confirmed_for_this_version": false,
     "live_midroll_resume_confirmed": false,
-    "content_sha256": "AAA9C67C97D5A76947D65F6F054C76C7133BBC58649F640F66A215864B3BCCF3",
-    "background_sha256": "4EFD47EF26EB64E6E12E6492F5FA7807CBCE47D88C9557694796D0712F826691",
-    "popup_sha256": "ADC907A98E152A7D78F8A740B03E52C0AFC76DCE115EAB53141151C83BD58607",
-    "reproduced_defects": [
-      "A valid active ad document was rejected solely because a subresource kept tab.status loading.",
-      "A transient reload failure left ready=true and refreshUnavailable=true, preventing recovery.",
-      "A persisted reservation was consumed even when reload was never dispatched."
-    ],
-    "browser_before_after": "1.0.3: unresolved image kept a valid document loading; 3 rejections and 0 reloads over 8.5 seconds. 1.0.4: reload and trusted skip passed under the same condition.",
-    "other_pc_failure_reproduced": false,
+    "content_sha256": "FE24A5711A0FF49276C0F61D3646C1789F6C1F7F12D26A83F091013278330F91",
+    "background_sha256": "7C304B2439E83CF7B8490ADECDD7AC55ED38BBD06CC387E173B6BE5744BC16C7",
+    "popup_sha256": "D87F6E6B2C6D8EAEB47A35B9E5324D471337455C734A79B7B00434257E91ECFB",
+    "detection_benchmark": {
+      "baseline": "1.0.4",
+      "candidate": "1.0.5",
+      "samples_per_condition": 24,
+      "scope": "DOM mutation to passive worker request receipt on local synthetic pages in isolated real Chromium/MV3; not actual ad removal time.",
+      "metric_order": [
+        "p50_ms",
+        "p95_ms",
+        "max_ms"
+      ],
+      "existing_player_ad_class": {
+        "before": [
+          85,
+          93,
+          100
+        ],
+        "after": [
+          2,
+          3,
+          3
+        ]
+      },
+      "player_insert": {
+        "before": [
+          570,
+          1042,
+          1094
+        ],
+        "after": [
+          5,
+          7,
+          7
+        ]
+      },
+      "player_replace": {
+        "before": [
+          593,
+          1052,
+          1085
+        ],
+        "after": [
+          4,
+          5,
+          6
+        ]
+      },
+      "noise": {
+        "unrelated_span_insert_delete_count": 4000,
+        "runs": 3,
+        "false_requests": 0,
+        "renderer_task_duration_median_ms": {
+          "before": 16.223,
+          "after": 30.637
+        },
+        "renderer_script_duration_median_ms": {
+          "before": 0.451,
+          "after": 7.343
+        },
+        "limitation": "Includes fixture DOM work; observer cost increased. Not an extension-exclusive CPU profile."
+      }
+    },
+    "local_chrome_install": {
+      "version": "1.0.5",
+      "enabled": true,
+      "max_reloads": 3,
+      "confirmed": true
+    },
     "other_pc_fix_confirmed": false,
-    "limitations": "The other PC has not been directly inspected. Live skip and mid-roll restoration were not observed for 1.0.4; those paths passed synthetic browser fixtures. Reloading does not guarantee ad removal. Clipboard handler tests used a spy rather than changing the system clipboard."
+    "limitations": "Other-PC operation was user-confirmed for 1.0.4, not this version. Live skip and mid-roll restoration were not observed for 1.0.5; those paths passed synthetic browser fixtures. Reloading does not guarantee ad removal. Clipboard tests used a spy rather than changing the system clipboard."
   },
   "automation": {
     "configured": true,
@@ -86,95 +150,156 @@
     "service_account_json_key_created": false,
     "personal_oauth_refresh_token_stored": false,
     "billing_connected_at_setup": false,
-    "workflow_run_id": "40645624815",
-    "workflow_run_number": 7,
+    "workflow_run_id": "40652243402",
+    "workflow_run_number": 8,
     "workflow_event": "push",
     "workflow_conclusion": "success",
-    "source_commit": "87ad6a0a06b6838938669b89766ecf29c1cbffe2",
-    "workflow_url": "https://github.com/knj-arch/youtube-auto-skip/actions/runs/40645624815",
-    "submission_accepted_at_utc": "2026-10-28T06:44:17.155Z"
+    "source_commit": "02dc7e34b7fe495f4812f26ea3ab30a220c46eca",
+    "workflow_url": "https://github.com/knj-arch/youtube-auto-skip/actions/runs/40652243402",
+    "submission_accepted_at_utc": "2026-10-28T07:47:01.948Z"
   },
   "manual_release": {
-    "version": "1.0.4",
-    "url": "https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.4",
-    "download_url": "https://github.com/knj-arch/youtube-auto-skip/releases/download/v1.0.4/youtube-auto-skip-1.0.4.zip",
-    "sha256": "632278B06BFCAEC9CDE330FB5CA75E59791D758BDFD51447EE8F8C2BA7EC309C",
-    "bytes": 25018,
+    "version": "1.0.5",
+    "url": "https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.5",
+    "download_url": "https://github.com/knj-arch/youtube-auto-skip/releases/download/v1.0.5/youtube-auto-skip-1.0.5.zip",
+    "sha256": "FF36AE70637B0785ACD9478FD599AB64E4D27144AF4A6E1FDAC182583736C3B6",
+    "bytes": 24905,
     "anonymous_download_verified": true,
     "runtime_files_match_source": true
   },
   "replaced_submission": {
-    "version": "1.0.3.6",
+    "version": "1.0.4.7",
     "state": "CANCELLED",
-    "reason": "Replace with tested loading-state, retry recovery and pre-dispatch reservation fixes plus local diagnostics.",
-    "confirmed_at_kst": "2026-10-28 15:41:27 KST",
-    "workflow_run_id": "40645367291"
+    "reason": "Replace with verified strict TypeScript build and faster ad/player detection while preserving safety guards.",
+    "confirmed_at_kst": "2026-10-28 16:41:17 KST",
+    "workflow_run_id": "40651671700"
   },
   "visibility": "PRIVATE",
   "price": "FREE",
   "publish_after_approval": true,
   "dashboard_url": "https://chrome.google.com/webstore/devconsole/1c3467ca-1ed5-46e9-b508-4f6bc1e03a60/oilfjmphaeclhghjdiflbolddhdokimh/edit/status",
   "previous_release": {
-    "source_version": "1.0.3",
-    "submitted_version": "1.0.3.6",
+    "source_version": "1.0.4",
+    "submitted_version": "1.0.4.7",
     "verification": {
-      "node_checks_passed": 99,
-      "browser_fixture_checks_passed": 12,
+      "node_checks_passed": 133,
+      "browser_fixture_checks_passed": 16,
       "live_ad_reload_to_main_confirmed": true,
       "live_successes": 1,
       "configured_max_reloads": 3,
-      "live_reload_count": 2,
-      "live_reload_interval_ms": 3138,
-      "first_ad_seconds": 50.081,
-      "second_ad_seconds": 15.041,
+      "live_reload_count": 3,
+      "live_reload_requests": 3,
+      "live_persisted_reload_count": 3,
+      "live_reload_intervals_ms": [
+        3081,
+        3032
+      ],
+      "ad_durations_seconds": [
+        50.081,
+        15.041,
+        15.021
+      ],
       "main_video_seconds": 223.381,
-      "main_playback_observed_seconds": 1.744679,
-      "live_skip_confirmed_for_this_version": true,
-      "live_skip": {
-        "confirmed_at_utc": "2026-10-28T06:08:51.746Z",
-        "configured_max_reloads": 1,
-        "guard_seeded": false,
-        "trusted": true,
-        "ad_seconds": 50.081,
-        "clicked_at_ad_seconds": 5.312287,
-        "request_to_click_ms": 36,
-        "main_first_observed_after_ms": 256,
-        "main_observed_seconds": 1.122582,
-        "same_document": true,
-        "reserved_reload_count": 1,
-        "actual_document_reloads": 0,
-        "reload_response_reason_captured": false
-      },
+      "main_playback_observed_seconds": 1.776601,
+      "live_observed_from_utc": "2026-10-28T06:34:15.986Z",
+      "live_observed_until_utc": "2026-10-28T06:34:37.943Z",
+      "external_reload_or_skip_input": false,
+      "guard_seeded": false,
+      "live_skip_confirmed_for_this_version": false,
       "live_midroll_resume_confirmed": false,
-      "content_sha256": "F99B5271106C56F423C92FAA79009F05F61EA64A8D1D2CBF6BEB9A3F254791DB",
+      "content_sha256": "AAA9C67C97D5A76947D65F6F054C76C7133BBC58649F640F66A215864B3BCCF3",
+      "background_sha256": "4EFD47EF26EB64E6E12E6492F5FA7807CBCE47D88C9557694796D0712F826691",
+      "popup_sha256": "ADC907A98E152A7D78F8A740B03E52C0AFC76DCE115EAB53141151C83BD58607",
+      "reproduced_defects": [
+        "A valid active ad document was rejected solely because a subresource kept tab.status loading.",
+        "A transient reload failure left ready=true and refreshUnavailable=true, preventing recovery.",
+        "A persisted reservation was consumed even when reload was never dispatched."
+      ],
+      "browser_before_after": "1.0.3: unresolved image kept a valid document loading; 3 rejections and 0 reloads over 8.5 seconds. 1.0.4: reload and trusted skip passed under the same condition.",
       "other_pc_failure_reproduced": false,
-      "limitations": "The real skip was confirmed separately with maxReloads=1: one reserved attempt and zero document reloads, so it does not prove a completed reload-to-skip sequence. Live mid-roll restoration and the other PC failure were not directly inspected. A reload does not guarantee ad removal."
+      "other_pc_fix_confirmed": false,
+      "limitations": "The other PC has not been directly inspected. Live skip and mid-roll restoration were not observed for 1.0.4; those paths passed synthetic browser fixtures. Reloading does not guarantee ad removal. Clipboard handler tests used a spy rather than changing the system clipboard.",
+      "other_pc_fix_user_confirmed": true,
+      "other_pc_directly_inspected": false
     },
     "manual_release": {
-      "version": "1.0.3",
-      "url": "https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.3",
-      "download_url": "https://github.com/knj-arch/youtube-auto-skip/releases/download/v1.0.3/youtube-auto-skip-1.0.3.zip",
-      "sha256": "6AB612F2D075E54B34C290E0BB15FCCCA50C50EEEB906BE4C86C9BCD42896A71",
+      "version": "1.0.4",
+      "url": "https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.4",
+      "download_url": "https://github.com/knj-arch/youtube-auto-skip/releases/download/v1.0.4/youtube-auto-skip-1.0.4.zip",
+      "sha256": "632278B06BFCAEC9CDE330FB5CA75E59791D758BDFD51447EE8F8C2BA7EC309C",
+      "bytes": 25018,
       "anonymous_download_verified": true,
       "runtime_files_match_source": true
     },
     "replaced_submission": {
-      "version": "1.0.2.5",
+      "version": "1.0.3.6",
       "state": "CANCELLED",
-      "reason": "Replace with the tested startup-state recovery fix",
-      "confirmed_at_kst": "2026-10-28 15:03:45 KST",
-      "workflow_run_id": "40641559594"
+      "reason": "Replace with tested loading-state, retry recovery and pre-dispatch reservation fixes plus local diagnostics.",
+      "confirmed_at_kst": "2026-10-28 15:41:27 KST",
+      "workflow_run_id": "40645367291"
+    },
+    "previous_release": {
+      "source_version": "1.0.3",
+      "submitted_version": "1.0.3.6",
+      "verification": {
+        "node_checks_passed": 99,
+        "browser_fixture_checks_passed": 12,
+        "live_ad_reload_to_main_confirmed": true,
+        "live_successes": 1,
+        "configured_max_reloads": 3,
+        "live_reload_count": 2,
+        "live_reload_interval_ms": 3138,
+        "first_ad_seconds": 50.081,
+        "second_ad_seconds": 15.041,
+        "main_video_seconds": 223.381,
+        "main_playback_observed_seconds": 1.744679,
+        "live_skip_confirmed_for_this_version": true,
+        "live_skip": {
+          "confirmed_at_utc": "2026-10-28T06:08:51.746Z",
+          "configured_max_reloads": 1,
+          "guard_seeded": false,
+          "trusted": true,
+          "ad_seconds": 50.081,
+          "clicked_at_ad_seconds": 5.312287,
+          "request_to_click_ms": 36,
+          "main_first_observed_after_ms": 256,
+          "main_observed_seconds": 1.122582,
+          "same_document": true,
+          "reserved_reload_count": 1,
+          "actual_document_reloads": 0,
+          "reload_response_reason_captured": false
+        },
+        "live_midroll_resume_confirmed": false,
+        "content_sha256": "F99B5271106C56F423C92FAA79009F05F61EA64A8D1D2CBF6BEB9A3F254791DB",
+        "other_pc_failure_reproduced": false,
+        "limitations": "The real skip was confirmed separately with maxReloads=1: one reserved attempt and zero document reloads, so it does not prove a completed reload-to-skip sequence. Live mid-roll restoration and the other PC failure were not directly inspected. A reload does not guarantee ad removal."
+      },
+      "manual_release": {
+        "version": "1.0.3",
+        "url": "https://github.com/knj-arch/youtube-auto-skip/releases/tag/v1.0.3",
+        "download_url": "https://github.com/knj-arch/youtube-auto-skip/releases/download/v1.0.3/youtube-auto-skip-1.0.3.zip",
+        "sha256": "6AB612F2D075E54B34C290E0BB15FCCCA50C50EEEB906BE4C86C9BCD42896A71",
+        "anonymous_download_verified": true,
+        "runtime_files_match_source": true
+      },
+      "replaced_submission": {
+        "version": "1.0.2.5",
+        "state": "CANCELLED",
+        "reason": "Replace with the tested startup-state recovery fix",
+        "confirmed_at_kst": "2026-10-28 15:03:45 KST",
+        "workflow_run_id": "40641559594"
+      }
     }
   },
   "metadata": {
-    "listing_description_updated": true,
-    "testing_instructions_updated": true,
-    "saved_via": "Authenticated Aside native developer dashboard",
+    "listing_description_updated_for_this_version": false,
+    "testing_instructions_updated_for_this_version": false,
+    "note": "Existing 1.0.4 functional listing and reviewer instructions retained. The reviewer instruction field was disabled when checked; no 1.0.5 save is claimed.",
     "additional_permissions": false,
     "privacy_policy_url": "https://knj-arch.github.io/youtube-auto-skip/",
-    "privacy_workflow_run_id": "40645624934",
+    "privacy_workflow_run_id": "40652243497",
     "privacy_workflow_conclusion": "success",
     "privacy_http_status": 200,
-    "privacy_version_1_0_4_and_diagnostics_verified": true
+    "privacy_version_1_0_5_and_diagnostics_verified": true
   }
 }
